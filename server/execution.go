@@ -244,6 +244,8 @@ type piiFieldEntry struct {
 	PageNumber    int
 }
 
+const maxInlinePIIResponseLength = 12000
+
 func buildPIIResultSection(result upstageDocumentResult) string {
 	payload := parsePIIResultPayload(result.Response.Result)
 	entries := collectPIIFieldEntries(payload)
@@ -269,7 +271,10 @@ func buildPIIResultSection(result upstageDocumentResult) string {
 	}
 
 	if len(entries) == 0 {
-		lines = append(lines, "", "_추출된 개인정보 필드가 없습니다. `PII API 응답 파라미터 보기` 버튼에서 원본 JSON을 확인하세요._")
+		lines = append(lines, "", "_추출된 개인정보 필드가 없습니다. 아래에 PII API 원본 응답을 그대로 표시합니다._")
+		if responseBlock := buildInlinePIIResponseBlock(result); responseBlock != "" {
+			lines = append(lines, "", responseBlock)
+		}
 		return strings.Join(lines, "\n")
 	}
 
@@ -289,6 +294,30 @@ func parsePIIResultPayload(raw json.RawMessage) any {
 		return nil
 	}
 	return payload
+}
+
+func buildInlinePIIResponseBlock(result upstageDocumentResult) string {
+	responseText := strings.TrimSpace(result.ResponseDebug.Body)
+	if responseText == "" {
+		if payload := buildSuccessResponseDebugFallback(result.Response); payload != nil {
+			responseText = marshalDebugPayload(payload)
+		}
+	}
+	if responseText == "" {
+		return "_표시할 API 응답 본문이 없습니다._"
+	}
+
+	truncated := truncateString(responseText, maxInlinePIIResponseLength)
+	lines := []string{
+		"#### PII API Response",
+		"```json",
+		truncated,
+		"```",
+	}
+	if len(truncated) < len(responseText) {
+		lines = append(lines, "_응답 본문이 길어 일부만 표시했습니다._")
+	}
+	return strings.Join(lines, "\n")
 }
 
 func parseDebugPayloadString(raw string) any {

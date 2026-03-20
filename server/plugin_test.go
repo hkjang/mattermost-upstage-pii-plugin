@@ -210,9 +210,21 @@ func TestBuildDocumentResponseMessagePointsToResponseDebugWhenNoFields(t *testin
 			Type:   "document",
 			Result: json.RawMessage(`{"documentType":"id_card","fields":[]}`),
 		},
+		ResponseDebug: upstageResponseDebug{
+			Body: `{
+  "result": {
+    "documentType": "id_card",
+    "fields": []
+  },
+  "type": "document",
+  "numBilledPages": 1
+}`,
+		},
 	}}, 20000)
 
-	require.Contains(t, message, "PII API 응답 파라미터 보기")
+	require.Contains(t, message, "PII API 원본 응답")
+	require.Contains(t, message, "#### PII API Response")
+	require.Contains(t, message, `"fields": []`)
 }
 
 func TestBuildSuccessResponseDebugPayloadIncludesFullResponseBody(t *testing.T) {
