@@ -269,7 +269,7 @@ func buildPIIResultSection(result upstageDocumentResult) string {
 	}
 
 	if len(entries) == 0 {
-		lines = append(lines, "", "_추출된 개인정보 필드가 없습니다. 요청/응답 파라미터 버튼에서 원본 JSON을 확인하세요._")
+		lines = append(lines, "", "_추출된 개인정보 필드가 없습니다. `PII API 응답 파라미터 보기` 버튼에서 원본 JSON을 확인하세요._")
 		return strings.Join(lines, "\n")
 	}
 
@@ -286,6 +286,19 @@ func parsePIIResultPayload(raw json.RawMessage) any {
 
 	var payload any
 	if err := json.Unmarshal(raw, &payload); err != nil {
+		return nil
+	}
+	return payload
+}
+
+func parseDebugPayloadString(raw string) any {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil
+	}
+
+	var payload any
+	if err := json.Unmarshal([]byte(trimmed), &payload); err != nil {
 		return nil
 	}
 	return payload
@@ -950,7 +963,7 @@ func buildBotFailureMessage(bot BotDefinition, correlationID string, failure exe
 		lines = append(lines, "", "_재시도 가능:_ 예")
 	}
 	if failure.InputDebug != "" || failure.OutputDebug != "" {
-		lines = append(lines, "", "_상단 버튼에서 요청/응답 파라미터를 볼 수 있습니다._")
+		lines = append(lines, "", "_상단의 요청/응답 파라미터 버튼에서 원본 payload를 확인할 수 있습니다._")
 	}
 	lines = append(lines, "", fmt.Sprintf("_Correlation ID:_ `%s`", correlationID))
 	if failure.APIDuration > 0 {
@@ -989,19 +1002,43 @@ func buildSuccessResponseDebugPayload(results []upstageDocumentResult) string {
 		item := map[string]any{
 			"filename": result.Attachment.Name,
 		}
-		if responseType := strings.TrimSpace(result.Response.Type); responseType != "" {
-			item["type"] = responseType
+		if result.ResponseDebug.StatusCode > 0 {
+			item["status_code"] = result.ResponseDebug.StatusCode
 		}
-		if result.Response.NumBilledPages > 0 {
-			item["numBilledPages"] = result.Response.NumBilledPages
+		if requestID := strings.TrimSpace(result.ResponseDebug.RequestID); requestID != "" {
+			item["request_id"] = requestID
 		}
-		if payload := parsePIIResultPayload(result.Response.Result); payload != nil {
-			item["result"] = payload
+		if payload := parseDebugPayloadString(result.ResponseDebug.Body); payload != nil {
+			item["response"] = payload
+		} else if body := strings.TrimSpace(result.ResponseDebug.Body); body != "" {
+			item["response_body"] = body
+		} else if payload := buildSuccessResponseDebugFallback(result.Response); payload != nil {
+			item["response"] = payload
 		}
 		items = append(items, item)
 	}
 
 	return marshalDebugPayload(map[string]any{"pii_inference": items})
+}
+
+func buildSuccessResponseDebugFallback(response upstageParseResponse) any {
+	payload := map[string]any{}
+	if responseType := strings.TrimSpace(response.Type); responseType != "" {
+		payload["type"] = responseType
+	}
+	if response.NumBilledPages > 0 {
+		payload["numBilledPages"] = response.NumBilledPages
+	}
+	if modelName := strings.TrimSpace(response.Model); modelName != "" {
+		payload["model"] = modelName
+	}
+	if resultPayload := parsePIIResultPayload(response.Result); resultPayload != nil {
+		payload["result"] = resultPayload
+	}
+	if len(payload) == 0 {
+		return nil
+	}
+	return payload
 }
 
 func formatUpstageAPIDuration(duration time.Duration) string {

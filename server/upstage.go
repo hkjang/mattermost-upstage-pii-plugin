@@ -69,6 +69,7 @@ type upstageParseResponse struct {
 type upstageDocumentResult struct {
 	Attachment    botAttachment
 	Response      upstageParseResponse
+	ResponseDebug upstageResponseDebug
 	RequestDebugs []upstageRequestDebug
 }
 
@@ -326,8 +327,9 @@ func (p *Plugin) performUpstageDocumentParseRequest(
 	}
 
 	return upstageDocumentResult{
-		Attachment: attachment,
-		Response:   parsed,
+		Attachment:    attachment,
+		Response:      parsed,
+		ResponseDebug: buildUpstageResponseDebug(response.StatusCode, response.Header, responseBody, nil),
 	}, response.StatusCode, nil
 }
 

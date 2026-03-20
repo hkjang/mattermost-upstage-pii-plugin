@@ -202,6 +202,49 @@ func TestBuildDocumentResponseMessageSummarizesPIIFields(t *testing.T) {
 	require.Contains(t, message, "`id_number`: `900101-1234567`")
 }
 
+func TestBuildDocumentResponseMessagePointsToResponseDebugWhenNoFields(t *testing.T) {
+	message := buildDocumentResponseMessage("", []upstageDocumentResult{{
+		Attachment: botAttachment{Name: "empty.pdf"},
+		Response: upstageParseResponse{
+			Model:  "pii",
+			Type:   "document",
+			Result: json.RawMessage(`{"documentType":"id_card","fields":[]}`),
+		},
+	}}, 20000)
+
+	require.Contains(t, message, "PII API 응답 파라미터 보기")
+}
+
+func TestBuildSuccessResponseDebugPayloadIncludesFullResponseBody(t *testing.T) {
+	payload := buildSuccessResponseDebugPayload([]upstageDocumentResult{{
+		Attachment: botAttachment{Name: "id-card.jpg"},
+		Response: upstageParseResponse{
+			Model:          "pii",
+			Type:           "document",
+			NumBilledPages: 1,
+			Result:         json.RawMessage(`{"fields":[]}`),
+		},
+		ResponseDebug: upstageResponseDebug{
+			StatusCode: 200,
+			RequestID:  "req-123",
+			Body: `{
+  "result": {
+    "apiVersion": "v1",
+    "documentType": "id_card",
+    "fields": []
+  },
+  "type": "document",
+  "numBilledPages": 1
+}`,
+		},
+	}})
+
+	require.Contains(t, payload, `"request_id": "req-123"`)
+	require.Contains(t, payload, `"status_code": 200`)
+	require.Contains(t, payload, `"apiVersion": "v1"`)
+	require.Contains(t, payload, `"documentType": "id_card"`)
+}
+
 func TestBuildBotResponseMessageIncludesAPIDuration(t *testing.T) {
 	message := buildBotResponseMessage("파싱 완료", "corr-123", 2350*time.Millisecond)
 

@@ -51,6 +51,7 @@ const spinnerStyle: React.CSSProperties = {
 const toolbarStyle: React.CSSProperties = {
     alignItems: 'center',
     display: 'flex',
+    flexWrap: 'wrap',
     gap: '8px',
 };
 
@@ -96,15 +97,15 @@ const modalHeaderStyle: React.CSSProperties = {
     alignItems: 'center',
     borderBottom: '1px solid rgba(var(--center-channel-color-rgb), 0.12)',
     display: 'flex',
-    justifyContent: 'space-between',
     gap: '12px',
+    justifyContent: 'space-between',
     padding: '16px 20px',
 };
 
 const modalBodyStyle: React.CSSProperties = {
-    display: 'grid',
+    display: 'flex',
+    flexDirection: 'column',
     gap: '16px',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
     overflowY: 'auto',
     padding: '20px',
 };
@@ -133,23 +134,34 @@ const debugPreStyle: React.CSSProperties = {
     wordBreak: 'break-word',
 };
 
+const tabRowStyle: React.CSSProperties = {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '8px',
+};
+
+type DebugSection = 'request' | 'response';
+
 export default function UpstageBotPost(props: Props) {
     const [message, setMessage] = useState(getRenderableMessage(props.post));
     const [generating, setGenerating] = useState(isStreamingPost(props.post));
     const [precontent, setPrecontent] = useState(isUpstageAwaitingFirstChunk(props.post));
     const [showDebugModal, setShowDebugModal] = useState(false);
+    const [activeDebugSection, setActiveDebugSection] = useState<DebugSection>('request');
     const listenerID = useRef(`upstage-${Math.random().toString(36).slice(2)}`);
     const inputDebug = normalizeDebugPayload(props.post?.props?.upstage_request_input || props.post?.props?.upstage_error_input);
     const outputDebug = normalizeDebugPayload(props.post?.props?.upstage_response_output || props.post?.props?.upstage_error_output);
-    const canShowDebug = inputDebug !== '' || outputDebug !== '';
-    const debugButtonLabel = outputDebug !== '' ? '요청/응답 파라미터 보기' : '요청 파라미터 보기';
-    const debugModalTitle = outputDebug !== '' ? 'PII 요청/응답 파라미터' : 'PII 요청 파라미터';
+    const hasInputDebug = inputDebug !== '';
+    const hasOutputDebug = outputDebug !== '';
+    const canShowDebug = hasInputDebug || hasOutputDebug;
+    const debugModalTitle = activeDebugSection === 'response' ? 'PII API 응답 파라미터' : 'PII API 요청 파라미터';
 
     useEffect(() => {
         setMessage(getRenderableMessage(props.post));
         setGenerating(isStreamingPost(props.post));
         setPrecontent(isUpstageAwaitingFirstChunk(props.post));
         setShowDebugModal(false);
+        setActiveDebugSection(props.post?.props?.upstage_response_output ? 'response' : 'request');
     }, [
         props.post.id,
         props.post.message,
@@ -219,13 +231,30 @@ export default function UpstageBotPost(props: Props) {
         >
             {canShowDebug && (
                 <div style={toolbarStyle}>
-                    <button
-                        style={buttonStyle}
-                        type='button'
-                        onClick={() => setShowDebugModal(true)}
-                    >
-                        {debugButtonLabel}
-                    </button>
+                    {hasInputDebug && (
+                        <button
+                            style={buttonStyle}
+                            type='button'
+                            onClick={() => {
+                                setActiveDebugSection('request');
+                                setShowDebugModal(true);
+                            }}
+                        >
+                            {'PII API 요청 파라미터 보기'}
+                        </button>
+                    )}
+                    {hasOutputDebug && (
+                        <button
+                            style={buttonStyle}
+                            type='button'
+                            onClick={() => {
+                                setActiveDebugSection('response');
+                                setShowDebugModal(true);
+                            }}
+                        >
+                            {'PII API 응답 파라미터 보기'}
+                        </button>
+                    )}
                 </div>
             )}
             {precontent && (
@@ -272,14 +301,34 @@ export default function UpstageBotPost(props: Props) {
                             </button>
                         </div>
                         <div style={modalBodyStyle}>
-                            <section style={debugPanelStyle}>
-                                <strong>{'Request Parameters'}</strong>
-                                <pre style={debugPreStyle}>{inputDebug || '{}'}</pre>
-                            </section>
-                            {outputDebug !== '' && (
+                            {hasInputDebug && hasOutputDebug && (
+                                <div style={tabRowStyle}>
+                                    <button
+                                        style={getDebugTabButtonStyle(activeDebugSection === 'request')}
+                                        type='button'
+                                        onClick={() => setActiveDebugSection('request')}
+                                    >
+                                        {'요청'}
+                                    </button>
+                                    <button
+                                        style={getDebugTabButtonStyle(activeDebugSection === 'response')}
+                                        type='button'
+                                        onClick={() => setActiveDebugSection('response')}
+                                    >
+                                        {'응답'}
+                                    </button>
+                                </div>
+                            )}
+                            {activeDebugSection === 'request' && (
+                                <section style={debugPanelStyle}>
+                                    <strong>{'Request Parameters'}</strong>
+                                    <pre style={debugPreStyle}>{inputDebug || '{}'}</pre>
+                                </section>
+                            )}
+                            {activeDebugSection === 'response' && (
                                 <section style={debugPanelStyle}>
                                     <strong>{'Response Parameters'}</strong>
-                                    <pre style={debugPreStyle}>{outputDebug}</pre>
+                                    <pre style={debugPreStyle}>{outputDebug || '{}'}</pre>
                                 </section>
                             )}
                         </div>
@@ -308,4 +357,15 @@ function normalizeDebugPayload(value: unknown) {
     }
 
     return value.trim();
+}
+
+function getDebugTabButtonStyle(active: boolean): React.CSSProperties {
+    if (active) {
+        return {
+            ...buttonStyle,
+            background: 'rgba(var(--button-bg-rgb), 0.18)',
+        };
+    }
+
+    return buttonStyle;
 }
