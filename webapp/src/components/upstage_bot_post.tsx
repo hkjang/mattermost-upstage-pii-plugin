@@ -162,7 +162,7 @@ export default function UpstageBotPost(props: Props) {
     const hasInputDebug = hasDebugFlag(props.post?.props?.upstage_has_request_debug) || localInputDebug !== '' || hasRemoteDebugSource;
     const hasOutputDebug = hasDebugFlag(props.post?.props?.upstage_has_response_debug) || localOutputDebug !== '' || hasRemoteDebugSource;
     const canShowDebug = hasInputDebug || hasOutputDebug;
-    const debugModalTitle = activeDebugSection === 'response' ? 'PII API 응답 파라미터' : 'PII API 요청 파라미터';
+    const debugModalTitle = activeDebugSection === 'response' ? 'PII API 응답 JSON' : 'PII API 요청 파라미터';
 
     useEffect(() => {
         setMessage(getRenderableMessage(props.post));
@@ -300,7 +300,7 @@ export default function UpstageBotPost(props: Props) {
                                 setShowDebugModal(true);
                             }}
                         >
-                            {'PII API 응답 파라미터 보기'}
+                            {'PII API 응답 JSON 보기'}
                         </button>
                     )}
                 </div>
@@ -386,7 +386,7 @@ export default function UpstageBotPost(props: Props) {
                             )}
                             {activeDebugSection === 'response' && (
                                 <section style={debugPanelStyle}>
-                                    <strong>{'Response Parameters'}</strong>
+                                    <strong>{'API Response JSON'}</strong>
                                     <pre style={debugPreStyle}>{renderDebugContent(outputDebug, '응답 payload가 저장되지 않았습니다. 이 post가 새 디버그 저장 방식 이전에 생성되었을 수 있습니다.')}</pre>
                                 </section>
                             )}

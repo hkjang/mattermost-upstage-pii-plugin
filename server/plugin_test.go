@@ -210,21 +210,9 @@ func TestBuildDocumentResponseMessagePointsToResponseDebugWhenNoFields(t *testin
 			Type:   "document",
 			Result: json.RawMessage(`{"documentType":"id_card","fields":[]}`),
 		},
-		ResponseDebug: upstageResponseDebug{
-			Body: `{
-  "result": {
-    "documentType": "id_card",
-    "fields": []
-  },
-  "type": "document",
-  "numBilledPages": 1
-}`,
-		},
 	}}, 20000)
 
-	require.Contains(t, message, "PII API 원본 응답")
-	require.Contains(t, message, "#### PII API Response")
-	require.Contains(t, message, `"fields": []`)
+	require.Contains(t, message, "PII API 응답 JSON 보기")
 }
 
 func TestBuildSuccessResponseDebugPayloadIncludesFullResponseBody(t *testing.T) {
@@ -260,6 +248,43 @@ func TestBuildSuccessResponseDebugPayloadIncludesFullResponseBody(t *testing.T) 
 func TestFirstNonEmpty(t *testing.T) {
 	require.Equal(t, "value", firstNonEmpty("", "value", "fallback"))
 	require.Equal(t, "", firstNonEmpty("", "  "))
+}
+
+func TestBuildDocumentResponseMessageSupportsLocalizedPIIKeys(t *testing.T) {
+	message := buildDocumentResponseMessage("", []upstageDocumentResult{{
+		Attachment: botAttachment{Name: "resident-card.png"},
+		Response: upstageParseResponse{
+			Model: "pii",
+			Type:  "document",
+			Result: json.RawMessage(`{
+  "documentType": "resident_card",
+  "fields": [
+    {
+      "key": "개인정보.이름",
+      "type": "group",
+      "refinedValue": "홍길동",
+      "confidence": 0.99
+    },
+    {
+      "key": "개인정보.생년월일.content",
+      "refinedValue": "1990-01-01",
+      "entityConfidence": 0.97,
+      "pageNumber": 1
+    },
+    {
+      "key": "개인정보.상세주소",
+      "refinedValue": {
+        "content": "서울시 강남구"
+      }
+    }
+  ]
+}`),
+		},
+	}}, 20000)
+
+	require.Contains(t, message, "`개인정보.이름`: `홍길동`")
+	require.Contains(t, message, "`개인정보.생년월일`: `1990-01-01`")
+	require.Contains(t, message, "`개인정보.상세주소`: `서울시 강남구`")
 }
 
 func TestBuildBotResponseMessageIncludesAPIDuration(t *testing.T) {

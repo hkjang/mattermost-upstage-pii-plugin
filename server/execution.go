@@ -244,8 +244,6 @@ type piiFieldEntry struct {
 	PageNumber    int
 }
 
-const maxInlinePIIResponseLength = 12000
-
 func buildPIIResultSection(result upstageDocumentResult) string {
 	payload := parsePIIResultPayload(result.Response.Result)
 	entries := collectPIIFieldEntries(payload)
@@ -271,10 +269,7 @@ func buildPIIResultSection(result upstageDocumentResult) string {
 	}
 
 	if len(entries) == 0 {
-		lines = append(lines, "", "_추출된 개인정보 필드가 없습니다. 아래에 PII API 원본 응답을 그대로 표시합니다._")
-		if responseBlock := buildInlinePIIResponseBlock(result); responseBlock != "" {
-			lines = append(lines, "", responseBlock)
-		}
+		lines = append(lines, "", "_추출된 개인정보 필드가 없습니다. `PII API 응답 JSON 보기` 버튼에서 원본 JSON을 확인하세요._")
 		return strings.Join(lines, "\n")
 	}
 
@@ -294,30 +289,6 @@ func parsePIIResultPayload(raw json.RawMessage) any {
 		return nil
 	}
 	return payload
-}
-
-func buildInlinePIIResponseBlock(result upstageDocumentResult) string {
-	responseText := strings.TrimSpace(result.ResponseDebug.Body)
-	if responseText == "" {
-		if payload := buildSuccessResponseDebugFallback(result.Response); payload != nil {
-			responseText = marshalDebugPayload(payload)
-		}
-	}
-	if responseText == "" {
-		return "_표시할 API 응답 본문이 없습니다._"
-	}
-
-	truncated := truncateString(responseText, maxInlinePIIResponseLength)
-	lines := []string{
-		"#### PII API Response",
-		"```json",
-		truncated,
-		"```",
-	}
-	if len(truncated) < len(responseText) {
-		lines = append(lines, "_응답 본문이 길어 일부만 표시했습니다._")
-	}
-	return strings.Join(lines, "\n")
 }
 
 func parseDebugPayloadString(raw string) any {
@@ -359,13 +330,13 @@ func collectPIIFieldEntries(payload any) []piiFieldEntry {
 func collectPIIFieldEntriesRecursive(value any, seen map[string]struct{}, entries *[]piiFieldEntry) {
 	switch typed := value.(type) {
 	case map[string]any:
-		key := strings.TrimSpace(stringValue(typed["key"]))
+		key := normalizePIIFieldKey(extractPIIFieldValue(typed["key"]))
 		fieldType := strings.ToLower(strings.TrimSpace(stringValue(typed["type"])))
-		fieldValue := strings.TrimSpace(stringValue(typed["refinedValue"]))
+		fieldValue := extractPIIFieldValue(typed["refinedValue"])
 		if fieldValue == "" {
-			fieldValue = strings.TrimSpace(stringValue(typed["value"]))
+			fieldValue = extractPIIFieldValue(typed["value"])
 		}
-		if key != "" && fieldValue != "" && fieldType != "group" {
+		if key != "" && fieldValue != "" {
 			signature := key + "\x00" + fieldValue
 			if _, ok := seen[signature]; !ok {
 				entry := piiFieldEntry{
@@ -384,6 +355,14 @@ func collectPIIFieldEntriesRecursive(value any, seen map[string]struct{}, entrie
 				}
 				seen[signature] = struct{}{}
 				*entries = append(*entries, entry)
+			}
+		}
+
+		if key != "" && fieldType == "group" {
+			for _, nestedKey := range []string{"properties", "entities", "fields", "groups"} {
+				if nestedValue, ok := typed[nestedKey]; ok {
+					collectPIIFieldEntriesRecursive(nestedValue, seen, entries)
+				}
 			}
 		}
 
@@ -420,6 +399,44 @@ func renderPIIFieldEntries(entries []piiFieldEntry, limit int) string {
 		lines = append(lines, line)
 	}
 	return strings.Join(lines, "\n")
+}
+
+func extractPIIFieldValue(value any) string {
+	switch typed := value.(type) {
+	case string:
+		return strings.TrimSpace(typed)
+	case fmt.Stringer:
+		return strings.TrimSpace(typed.String())
+	case json.Number:
+		return strings.TrimSpace(typed.String())
+	case float64, float32, int, int32, int64, bool:
+		return strings.TrimSpace(fmt.Sprint(typed))
+	case map[string]any:
+		for _, key := range []string{"refinedValue", "value", "content", "text", "name"} {
+			if nested := extractPIIFieldValue(typed[key]); nested != "" {
+				return nested
+			}
+		}
+	case []any:
+		parts := make([]string, 0, len(typed))
+		for _, item := range typed {
+			if nested := extractPIIFieldValue(item); nested != "" {
+				parts = append(parts, nested)
+			}
+		}
+		return strings.TrimSpace(strings.Join(parts, ", "))
+	}
+	return ""
+}
+
+func normalizePIIFieldKey(key string) string {
+	key = strings.TrimSpace(key)
+	for _, suffix := range []string{".content", ".value"} {
+		if strings.HasSuffix(key, suffix) {
+			return strings.TrimSpace(strings.TrimSuffix(key, suffix))
+		}
+	}
+	return key
 }
 
 func formatPIIFieldValue(value string) string {
