@@ -1,0 +1,32 @@
+{
+    "id": "com.mattermost.upstage-pii-masking",
+    "name": "Upstage PII Masking",
+    "version": "0.1.1",
+    "description": "Mattermost의 파일 첨부를 DocAI Controller PII Inference API로 보내 개인정보를 추출하고 마스킹해 주는 전용 봇 플러그인입니다.",
+    "homepage_url": "",
+    "support_url": "",
+    "icon_path": "assets/starter-template-icon.svg",
+    "min_server_version": "10.0.0",
+    "server": {
+        "executables": {
+            "linux-amd64": "server/dist/plugin-linux-amd64",
+            "linux-arm64": "server/dist/plugin-linux-arm64",
+            "darwin-amd64": "server/dist/plugin-darwin-amd64",
+            "darwin-arm64": "server/dist/plugin-darwin-arm64",
+            "windows-amd64": "server/dist/plugin-windows-amd64.exe"
+        }
+    },
+    "webapp": {
+        "bundle_path": "webapp/dist/main.js"
+    },
+    "settings_schema": {
+        "header": "",
+        "footer": "",
+        "settings": [
+            {
+                "key": "Config",
+                "type": "custom"
+            }
+        ]
+    }
+}
