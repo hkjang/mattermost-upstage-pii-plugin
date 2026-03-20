@@ -753,19 +753,20 @@ func (p *Plugin) postSuccess(channel *model.Channel, rootID string, account botA
 		return nil, err
 	}
 
+	hasRequestDebug := strings.TrimSpace(debugView.Request) != ""
+	hasResponseDebug := strings.TrimSpace(debugView.Output) != ""
 	props := map[string]any{
 		"from_bot":                "true",
 		"upstage_bot_id":          account.Definition.ID,
 		"upstage_correlation_id":  correlationID,
 		"upstage_api_duration_ms": apiDuration.Milliseconds(),
+		"upstage_has_request_debug":  hasRequestDebug,
+		"upstage_has_response_debug": hasResponseDebug,
 		"upstage_model":           account.Definition.Model,
 		"upstage_document_parser": "true",
 	}
 	if strings.TrimSpace(debugView.Request) != "" {
 		props["upstage_request_input"] = debugView.Request
-	}
-	if strings.TrimSpace(debugView.Output) != "" {
-		props["upstage_response_output"] = debugView.Output
 	}
 
 	post, appErr := p.API.CreatePost(&model.Post{
@@ -778,6 +779,11 @@ func (p *Plugin) postSuccess(channel *model.Channel, rootID string, account botA
 	})
 	if appErr != nil {
 		return nil, fmt.Errorf("failed to create Upstage response post: %w", appErr)
+	}
+	if hasRequestDebug || hasResponseDebug {
+		if err := p.savePostDebugPayload(post.Id, debugView.Request, debugView.Output); err != nil {
+			p.API.LogWarn("Failed to persist PII success debug payload", "post_id", post.Id, "correlation_id", correlationID, "error", err.Error())
+		}
 	}
 	return post, nil
 }
@@ -796,7 +802,10 @@ func (p *Plugin) postFailure(channel *model.Channel, rootID string, account botA
 		return err
 	}
 
-	_, appErr := p.API.CreatePost(&model.Post{
+	hasRequestDebug := strings.TrimSpace(failure.InputDebug) != ""
+	hasResponseDebug := strings.TrimSpace(failure.OutputDebug) != ""
+
+	post, appErr := p.API.CreatePost(&model.Post{
 		UserId:    account.UserID,
 		ChannelId: channel.Id,
 		RootId:    rootID,
@@ -808,15 +817,21 @@ func (p *Plugin) postFailure(channel *model.Channel, rootID string, account botA
 			"upstage_correlation_id":  correlationID,
 			"upstage_api_duration_ms": failure.APIDuration.Milliseconds(),
 			"upstage_model":           account.Definition.Model,
+			"upstage_has_request_debug":  hasRequestDebug,
+			"upstage_has_response_debug": hasResponseDebug,
 			"upstage_error":           "true",
 			"upstage_error_code":      failure.ErrorCode,
 			"upstage_error_input":     failure.InputDebug,
-			"upstage_error_output":    failure.OutputDebug,
 			"upstage_document_parser": "true",
 		},
 	})
 	if appErr != nil {
 		return fmt.Errorf("failed to create Upstage error post: %w", appErr)
+	}
+	if hasRequestDebug || hasResponseDebug {
+		if err := p.savePostDebugPayload(post.Id, failure.InputDebug, failure.OutputDebug); err != nil {
+			p.API.LogWarn("Failed to persist PII failure debug payload", "post_id", post.Id, "correlation_id", correlationID, "error", err.Error())
+		}
 	}
 	return nil
 }

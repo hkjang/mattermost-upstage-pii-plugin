@@ -245,6 +245,11 @@ func TestBuildSuccessResponseDebugPayloadIncludesFullResponseBody(t *testing.T) 
 	require.Contains(t, payload, `"documentType": "id_card"`)
 }
 
+func TestFirstNonEmpty(t *testing.T) {
+	require.Equal(t, "value", firstNonEmpty("", "value", "fallback"))
+	require.Equal(t, "", firstNonEmpty("", "  "))
+}
+
 func TestBuildBotResponseMessageIncludesAPIDuration(t *testing.T) {
 	message := buildBotResponseMessage("파싱 완료", "corr-123", 2350*time.Millisecond)
 

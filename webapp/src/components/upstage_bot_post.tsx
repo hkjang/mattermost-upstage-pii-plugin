@@ -4,6 +4,7 @@ import type {WebSocketMessage} from '@mattermost/client';
 
 import PostText from './post_text';
 
+import {getPostDebug} from '../client';
 import {isUpstageAwaitingFirstChunk} from '../streaming';
 
 type PostUpdateData = {
@@ -148,11 +149,18 @@ export default function UpstageBotPost(props: Props) {
     const [precontent, setPrecontent] = useState(isUpstageAwaitingFirstChunk(props.post));
     const [showDebugModal, setShowDebugModal] = useState(false);
     const [activeDebugSection, setActiveDebugSection] = useState<DebugSection>('request');
+    const [remoteRequestDebug, setRemoteRequestDebug] = useState('');
+    const [remoteResponseDebug, setRemoteResponseDebug] = useState('');
+    const [debugLoading, setDebugLoading] = useState(false);
+    const [debugError, setDebugError] = useState('');
     const listenerID = useRef(`upstage-${Math.random().toString(36).slice(2)}`);
-    const inputDebug = normalizeDebugPayload(props.post?.props?.upstage_request_input || props.post?.props?.upstage_error_input);
-    const outputDebug = normalizeDebugPayload(props.post?.props?.upstage_response_output || props.post?.props?.upstage_error_output);
-    const hasInputDebug = inputDebug !== '';
-    const hasOutputDebug = outputDebug !== '';
+    const localInputDebug = normalizeDebugPayload(props.post?.props?.upstage_request_input || props.post?.props?.upstage_error_input);
+    const localOutputDebug = normalizeDebugPayload(props.post?.props?.upstage_response_output || props.post?.props?.upstage_error_output);
+    const inputDebug = firstDefinedDebug(remoteRequestDebug, localInputDebug);
+    const outputDebug = firstDefinedDebug(remoteResponseDebug, localOutputDebug);
+    const hasRemoteDebugSource = Boolean(props.post?.id && props.post?.props?.upstage_correlation_id);
+    const hasInputDebug = hasDebugFlag(props.post?.props?.upstage_has_request_debug) || localInputDebug !== '' || hasRemoteDebugSource;
+    const hasOutputDebug = hasDebugFlag(props.post?.props?.upstage_has_response_debug) || localOutputDebug !== '' || hasRemoteDebugSource;
     const canShowDebug = hasInputDebug || hasOutputDebug;
     const debugModalTitle = activeDebugSection === 'response' ? 'PII API 응답 파라미터' : 'PII API 요청 파라미터';
 
@@ -161,7 +169,11 @@ export default function UpstageBotPost(props: Props) {
         setGenerating(isStreamingPost(props.post));
         setPrecontent(isUpstageAwaitingFirstChunk(props.post));
         setShowDebugModal(false);
-        setActiveDebugSection(props.post?.props?.upstage_response_output ? 'response' : 'request');
+        setRemoteRequestDebug('');
+        setRemoteResponseDebug('');
+        setDebugLoading(false);
+        setDebugError('');
+        setActiveDebugSection((props.post?.props?.upstage_has_response_debug || props.post?.props?.upstage_response_output) ? 'response' : 'request');
     }, [
         props.post.id,
         props.post.message,
@@ -172,6 +184,8 @@ export default function UpstageBotPost(props: Props) {
         props.post.props?.upstage_response_output,
         props.post.props?.upstage_error_input,
         props.post.props?.upstage_error_output,
+        props.post.props?.upstage_has_request_debug,
+        props.post.props?.upstage_has_response_debug,
     ]);
 
     useEffect(() => {
@@ -188,6 +202,40 @@ export default function UpstageBotPost(props: Props) {
         document.addEventListener('keydown', onKeyDown);
         return () => document.removeEventListener('keydown', onKeyDown);
     }, [showDebugModal]);
+
+    useEffect(() => {
+        if (!showDebugModal || !hasRemoteDebugSource || debugLoading) {
+            return undefined;
+        }
+        if (remoteRequestDebug !== '' || remoteResponseDebug !== '') {
+            return undefined;
+        }
+
+        let cancelled = false;
+        setDebugLoading(true);
+        setDebugError('');
+
+        getPostDebug(props.post.id).then((payload) => {
+            if (cancelled) {
+                return;
+            }
+            setRemoteRequestDebug(normalizeDebugPayload(payload.request));
+            setRemoteResponseDebug(normalizeDebugPayload(payload.response));
+        }).catch((error: Error) => {
+            if (cancelled) {
+                return;
+            }
+            setDebugError(error.message || '디버그 payload를 불러오지 못했습니다.');
+        }).finally(() => {
+            if (!cancelled) {
+                setDebugLoading(false);
+            }
+        });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [debugLoading, hasRemoteDebugSource, props.post.id, remoteRequestDebug, remoteResponseDebug, showDebugModal]);
 
     const listener = useMemo(() => {
         return (msg: WebSocketMessage<PostUpdateData>) => {
@@ -301,6 +349,17 @@ export default function UpstageBotPost(props: Props) {
                             </button>
                         </div>
                         <div style={modalBodyStyle}>
+                            {debugLoading && (
+                                <span style={statusStyle}>
+                                    {'PII 디버그 payload를 불러오는 중...'}
+                                </span>
+                            )}
+                            {debugError !== '' && (
+                                <section style={debugPanelStyle}>
+                                    <strong>{'Debug Status'}</strong>
+                                    <pre style={debugPreStyle}>{debugError}</pre>
+                                </section>
+                            )}
                             {hasInputDebug && hasOutputDebug && (
                                 <div style={tabRowStyle}>
                                     <button
@@ -322,13 +381,13 @@ export default function UpstageBotPost(props: Props) {
                             {activeDebugSection === 'request' && (
                                 <section style={debugPanelStyle}>
                                     <strong>{'Request Parameters'}</strong>
-                                    <pre style={debugPreStyle}>{inputDebug || '{}'}</pre>
+                                    <pre style={debugPreStyle}>{renderDebugContent(inputDebug, '요청 payload가 저장되지 않았습니다.')}</pre>
                                 </section>
                             )}
                             {activeDebugSection === 'response' && (
                                 <section style={debugPanelStyle}>
                                     <strong>{'Response Parameters'}</strong>
-                                    <pre style={debugPreStyle}>{outputDebug || '{}'}</pre>
+                                    <pre style={debugPreStyle}>{renderDebugContent(outputDebug, '응답 payload가 저장되지 않았습니다. 이 post가 새 디버그 저장 방식 이전에 생성되었을 수 있습니다.')}</pre>
                                 </section>
                             )}
                         </div>
@@ -357,6 +416,24 @@ function normalizeDebugPayload(value: unknown) {
     }
 
     return value.trim();
+}
+
+function hasDebugFlag(value: unknown) {
+    return value === true || value === 'true';
+}
+
+function firstDefinedDebug(primary: string, fallback: string) {
+    if (primary !== '') {
+        return primary;
+    }
+    return fallback;
+}
+
+function renderDebugContent(value: string, emptyMessage: string) {
+    if (value !== '') {
+        return value;
+    }
+    return emptyMessage;
 }
 
 function getDebugTabButtonStyle(active: boolean): React.CSSProperties {

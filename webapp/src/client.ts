@@ -121,6 +121,13 @@ export type ConnectionStatus = {
     retryable?: boolean;
 };
 
+export type PostDebugPayload = {
+    request?: string;
+    response?: string;
+    has_request: boolean;
+    has_response: boolean;
+};
+
 export function setSiteURL(value: string) {
     siteURL = value.replace(/\/+$/, '');
 }
@@ -168,6 +175,10 @@ export async function getBots(channelId?: string) {
 export async function getHistory(limit = 5) {
     const response = await request<{items: ExecutionRecord[]}>(`/history?limit=${limit}`);
     return response.items;
+}
+
+export async function getPostDebug(postId: string) {
+    return request<PostDebugPayload>(`/debug/post/${encodeURIComponent(postId)}`);
 }
 
 export async function runBot(payload: {

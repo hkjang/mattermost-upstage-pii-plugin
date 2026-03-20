@@ -37,6 +37,13 @@ type adminConfigResponse struct {
 	Source string             `json:"source"`
 }
 
+type postDebugResponse struct {
+	Request     string `json:"request,omitempty"`
+	Response    string `json:"response,omitempty"`
+	HasRequest  bool   `json:"has_request"`
+	HasResponse bool   `json:"has_response"`
+}
+
 func (p *Plugin) initRouter() *mux.Router {
 	router := mux.NewRouter()
 	router.Use(p.MattermostAuthorizationRequired)
@@ -45,6 +52,7 @@ func (p *Plugin) initRouter() *mux.Router {
 	apiRouter.HandleFunc("/config", p.handleAdminConfig).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/status", p.handleStatus).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/bots", p.handleBots).Methods(http.MethodGet)
+	apiRouter.HandleFunc("/debug/post/{post_id}", p.handlePostDebug).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/history", p.handleHistory).Methods(http.MethodGet)
 	apiRouter.HandleFunc("/run", p.handleRunBot).Methods(http.MethodPost)
 	apiRouter.HandleFunc("/test", p.handleTestConnection).Methods(http.MethodPost)
@@ -162,6 +170,56 @@ func (p *Plugin) handleHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": history})
+}
+
+func (p *Plugin) handlePostDebug(w http.ResponseWriter, r *http.Request) {
+	postID := mux.Vars(r)["post_id"]
+	if postID == "" {
+		writeError(w, http.StatusBadRequest, errors.New("missing post id"))
+		return
+	}
+
+	post, appErr := p.API.GetPost(postID)
+	if appErr != nil || post == nil {
+		writeError(w, http.StatusNotFound, errors.New("debug post not found"))
+		return
+	}
+	if post.Type != upstageBotPostType {
+		writeError(w, http.StatusNotFound, errors.New("debug payload not available for this post"))
+		return
+	}
+
+	userID := r.Header.Get("Mattermost-User-ID")
+	if !p.client.User.HasPermissionToChannel(userID, post.ChannelId, model.PermissionReadChannel) {
+		writeError(w, http.StatusForbidden, errors.New("you do not have access to this post"))
+		return
+	}
+
+	payload, found, err := p.getPostDebugPayload(post.Id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if !found {
+		payload = postDebugPayload{
+			Request:  stringPostProp(post, "upstage_request_input"),
+			Response: firstNonEmpty(
+				stringPostProp(post, "upstage_response_output"),
+				stringPostProp(post, "upstage_error_output"),
+			),
+		}
+	}
+	if payload.Request == "" && payload.Response == "" {
+		writeError(w, http.StatusNotFound, errors.New("debug payload was not stored for this post"))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, postDebugResponse{
+		Request:     payload.Request,
+		Response:    payload.Response,
+		HasRequest:  payload.Request != "",
+		HasResponse: payload.Response != "",
+	})
 }
 
 func (p *Plugin) handleRunBot(w http.ResponseWriter, r *http.Request) {
