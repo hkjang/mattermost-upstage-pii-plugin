@@ -397,7 +397,7 @@ func maskPDFFileInternal(content []byte, regions []maskRegion, pageSizes map[int
 			regionImg := createBlackPNGSized(int(math.Ceil(w)), int(math.Ceil(h)))
 
 			pdfY := pdfH - y - h // top-left origin to bottom-left
-			desc := fmt.Sprintf("pos:bl, off:%.1f %.1f, sc:1.0 abs, rot:0, op:1", x, pdfY)
+			desc := fmt.Sprintf("position:bl, offset:%.1f %.1f, scalefactor:1.0 abs, rotation:0, opacity:1", x, pdfY)
 
 			wm, wmErr := api.ImageWatermarkForReader(
 				bytes.NewReader(regionImg),
@@ -407,7 +407,7 @@ func maskPDFFileInternal(content []byte, regions []maskRegion, pageSizes map[int
 				types.POINTS,
 			)
 			if wmErr != nil {
-				continue
+				return nil, fmt.Errorf("pdfcpu watermark create error on page %d: %w (desc=%s, imgSize=%dx%d)", pageNum, wmErr, desc, int(math.Ceil(w)), int(math.Ceil(h)))
 			}
 
 			wmMap[pageNum] = append(wmMap[pageNum], wm)
