@@ -60,7 +60,7 @@ export default class Plugin {
 
     public async initialize(registry: PluginRegistry, store: Store<GlobalState>) {
         // eslint-disable-next-line no-console
-        console.log(`[${manifest.id}] webapp loaded — v0.2.6 build ${Date.now()}`);
+        console.log(`[${manifest.id}] webapp loaded — v0.3.0 build ${Date.now()}`);
         let siteURL = store.getState().entities.general.config.SiteURL;
         if (!siteURL) {
             siteURL = window.location.origin;

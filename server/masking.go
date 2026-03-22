@@ -375,6 +375,10 @@ func maskPDFFileInternal(content []byte, regions []maskRegion, pageSizes map[int
 		pdfW := pdfPageDims[pageNum-1].Width
 		pdfH := pdfPageDims[pageNum-1].Height
 
+		// Use pageSizes from API if available; otherwise use PDF dimensions directly.
+		// This handles both cases:
+		// - PDF with vector content: API coords ≈ PDF points, pageSizes may not be set
+		// - PDF with embedded image: API coords = image pixels, pageSizes = image dims
 		apiW, apiH := pdfW, pdfH
 		if ps, ok := pageSizes[pageNum]; ok && ps.Width > 0 && ps.Height > 0 {
 			apiW = ps.Width
@@ -385,6 +389,7 @@ func maskPDFFileInternal(content []byte, regions []maskRegion, pageSizes map[int
 
 		for _, region := range pageRegions {
 			minX, minY, maxX, maxY := polygonBounds(region.Polygon)
+			// Scale from API coordinate space to PDF points.
 			x := minX * scaleX
 			y := minY * scaleY
 			w := (maxX - minX) * scaleX
@@ -393,10 +398,11 @@ func maskPDFFileInternal(content []byte, regions []maskRegion, pageSizes map[int
 				continue
 			}
 
-			// Create a black image exactly the size of the region (in points → pixels at 1:1).
+			// Create a black image exactly the size of the region in PDF points.
 			regionImg := createBlackPNGSized(int(math.Ceil(w)), int(math.Ceil(h)))
 
-			pdfY := pdfH - y - h // top-left origin to bottom-left
+			// PDF origin is bottom-left; API origin is top-left.
+			pdfY := pdfH - y - h
 			desc := fmt.Sprintf("position:bl, offset:%.1f %.1f, scalefactor:1.0 abs, rotation:0, opacity:1", x, pdfY)
 
 			wm, wmErr := api.ImageWatermarkForReader(
@@ -487,9 +493,15 @@ func (p *Plugin) maskAndUploadFiles(results []upstageDocumentResult, channelID s
 			continue
 		}
 
-		p.API.LogInfo("maskAndUploadFiles: masking", "file", result.Attachment.Name, "mime", result.Attachment.MIMEType, "regions", len(regions))
-
 		pageSizes := extractPageSizes(payload)
+
+		p.API.LogInfo("maskAndUploadFiles: masking", "file", result.Attachment.Name, "mime", result.Attachment.MIMEType, "regions", len(regions), "pageSizes", fmt.Sprintf("%v", pageSizes))
+		for ri, rr := range regions {
+			minX, minY, maxX, maxY := polygonBounds(rr.Polygon)
+			p.API.LogInfo("maskAndUploadFiles: region", "index", ri, "page", rr.PageNumber,
+				"minX", fmt.Sprintf("%.1f", minX), "minY", fmt.Sprintf("%.1f", minY),
+				"maxX", fmt.Sprintf("%.1f", maxX), "maxY", fmt.Sprintf("%.1f", maxY))
+		}
 		mime := result.Attachment.MIMEType
 
 		var maskedContent []byte

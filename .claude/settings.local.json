@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/USER/projects/mattermost-upstage-pii-plugin/**)",
+      "Bash(npm run:*)",
+      "Bash(go test:*)",
+      "Bash(make dist:*)",
+      "Bash(go build:*)",
+      "Bash(../bin/manifest.exe id:*)",
+      "Bash(build/bin/manifest.exe id:*)",
+      "Bash(build/bin/manifest.exe version:*)",
+      "Bash(grep '\"\"version\"\"' plugin.json)",
+      "Bash(tar -xzf C:/Users/USER/projects/mattermost-upstage-pii-plugin/dist/com.mattermost.upstage-pii-masking-0.1.6.tar.gz -O com.mattermost.upstage-pii-masking/plugin.json)",
+      "Bash(gh release:*)",
+      "Bash(chmod +x dist/com.mattermost.upstage-pii-masking/server/dist/plugin-linux-*)",
+      "Bash(chmod +x dist/com.mattermost.upstage-pii-masking/server/dist/plugin-darwin-*)",
+      "Bash(tar -czf com.mattermost.upstage-pii-masking-0.1.6.tar.gz --transform='s|^|com.mattermost.upstage-pii-masking/|' --mode='a+rx' -C com.mattermost.upstage-pii-masking .)",
+      "Bash(tar -tzvf \"C:/Users/USER/projects/mattermost-upstage-pii-plugin/dist/com.mattermost.upstage-pii-masking-0.1.6.tar.gz\")",
+      "Bash(tar -tzvf com.mattermost.upstage-pii-masking-0.1.6.tar.gz)",
+      "Bash(xargs grep:*)",
+      "Bash(go get:*)",
+      "Bash(tar -tzvf com.mattermost.upstage-pii-masking-0.2.0.tar.gz)",
+      "Bash(tar -xzf com.mattermost.upstage-pii-masking-0.2.0.tar.gz -O com.mattermost.upstage-pii-masking/./plugin.json)",
+      "Bash(tar -xzf dist/com.mattermost.upstage-pii-masking-0.2.4.tar.gz -O com.mattermost.upstage-pii-masking/./webapp/dist/main.js)",
+      "Bash(tar -tzvf com.mattermost.upstage-pii-masking-0.2.4.tar.gz)",
+      "Bash(grep -E \"main.js$|plugin.json$\")",
+      "Bash(tar -czf test-clean.tar.gz --mode='a+rx' com.mattermost.upstage-pii-masking)",
+      "Bash(tar -tzvf test-clean.tar.gz)",
+      "Read(//c/Users/USER/projects/mattermost-upstage-pii-plugin/$\\(go env GOMODCACHE\\)/github.com/pdfcpu/pdfcpu@v0.11.1/pkg/pdfcpu/**)",
+      "Read(//c/Users/USER/projects/mattermost-upstage-pii-plugin/$\\(go env GOMODCACHE\\)/github.com/pdfcpu/pdfcpu@v0.11.1/**)"
+    ]
+  }
+}
