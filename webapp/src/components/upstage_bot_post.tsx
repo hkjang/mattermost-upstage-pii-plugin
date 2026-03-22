@@ -279,30 +279,26 @@ export default function UpstageBotPost(props: Props) {
         >
             {canShowDebug && (
                 <div style={toolbarStyle}>
-                    {hasInputDebug && (
-                        <button
-                            style={buttonStyle}
-                            type='button'
-                            onClick={() => {
-                                setActiveDebugSection('request');
-                                setShowDebugModal(true);
-                            }}
-                        >
-                            {'PII API 요청 파라미터 보기'}
-                        </button>
-                    )}
-                    {hasOutputDebug && (
-                        <button
-                            style={buttonStyle}
-                            type='button'
-                            onClick={() => {
-                                setActiveDebugSection('response');
-                                setShowDebugModal(true);
-                            }}
-                        >
-                            {'PII API 응답 JSON 보기'}
-                        </button>
-                    )}
+                    <button
+                        style={buttonStyle}
+                        type='button'
+                        onClick={() => {
+                            setActiveDebugSection('request');
+                            setShowDebugModal(true);
+                        }}
+                    >
+                        {'PII API 요청 파라미터 보기'}
+                    </button>
+                    <button
+                        style={buttonStyle}
+                        type='button'
+                        onClick={() => {
+                            setActiveDebugSection('response');
+                            setShowDebugModal(true);
+                        }}
+                    >
+                        {'PII API 응답 JSON 보기'}
+                    </button>
                 </div>
             )}
             {precontent && (
