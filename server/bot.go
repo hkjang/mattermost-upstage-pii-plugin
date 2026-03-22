@@ -29,6 +29,7 @@ type BotDefinition struct {
 	MergeMultipageTables *bool           `json:"merge_multipage_tables,omitempty"`
 	Base64Encoding       []string        `json:"base64_encoding,omitempty"`
 	MaskSensitiveData    *bool           `json:"mask_sensitive_data,omitempty"`
+	MaskPIIKeys          []string        `json:"mask_pii_keys,omitempty"`
 	VLLMBaseURL          string          `json:"vllm_base_url,omitempty"`
 	VLLMAPIKey           string          `json:"vllm_api_key,omitempty"`
 	VLLMModel            string          `json:"vllm_model,omitempty"`

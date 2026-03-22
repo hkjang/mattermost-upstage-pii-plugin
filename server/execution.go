@@ -202,7 +202,17 @@ func (p *Plugin) executeBotAndPost(ctx context.Context, request BotRunRequest) (
 	if shouldMaskSensitive {
 		output = truncateString(maskSensitiveContent(output), cfg.MaxOutputLength)
 	}
-	post, err := p.postSuccess(channel, request.RootID, account, correlationID, output, debugView, apiDurationTotal)
+
+	var maskedFileIDs []string
+	if len(bot.MaskPIIKeys) > 0 {
+		var maskErr error
+		maskedFileIDs, maskErr = p.maskAndUploadFiles(results, channel.Id, bot.MaskPIIKeys)
+		if maskErr != nil {
+			p.API.LogWarn("File masking failed", "error", maskErr.Error(), "correlation_id", correlationID)
+		}
+	}
+
+	post, err := p.postSuccess(channel, request.RootID, account, correlationID, output, debugView, apiDurationTotal, maskedFileIDs)
 	if err != nil {
 		failure := describeExecutionFailure(err, true, apiDurationTotal)
 		record := newExecutionRecord(request, account.Definition, correlationID, "failed", prompt, failure.Message, failure.ErrorCode, failure.Retryable, startedAt, time.Now())
@@ -324,7 +334,7 @@ func detectPIIResultSchema(payload any) string {
 	if _, ok := root["fields"]; ok {
 		return "oac"
 	}
-	for _, key := range []string{"document", "groups", "entities"} {
+	for _, key := range []string{"document", "documents", "groups", "entities"} {
 		if _, ok := root[key]; ok {
 			return "ufp"
 		}
@@ -806,7 +816,7 @@ func (p *Plugin) ensureBotInChannel(channelID, botUserID string) error {
 	return nil
 }
 
-func (p *Plugin) postSuccess(channel *model.Channel, rootID string, account botAccount, correlationID, output string, debugView successDebugView, apiDuration time.Duration) (*model.Post, error) {
+func (p *Plugin) postSuccess(channel *model.Channel, rootID string, account botAccount, correlationID, output string, debugView successDebugView, apiDuration time.Duration, fileIDs []string) (*model.Post, error) {
 	if err := p.ensureBotInChannel(channel.Id, account.UserID); err != nil {
 		return nil, err
 	}
@@ -826,6 +836,9 @@ func (p *Plugin) postSuccess(channel *model.Channel, rootID string, account botA
 	if strings.TrimSpace(debugView.Request) != "" {
 		props["upstage_request_input"] = debugView.Request
 	}
+	if strings.TrimSpace(debugView.Output) != "" && len(debugView.Output) < 256*1024 {
+		props["upstage_response_output"] = debugView.Output
+	}
 
 	post, appErr := p.API.CreatePost(&model.Post{
 		UserId:    account.UserID,
@@ -834,6 +847,7 @@ func (p *Plugin) postSuccess(channel *model.Channel, rootID string, account botA
 		Type:      upstageBotPostType,
 		Message:   buildBotResponseMessage(output, correlationID, apiDuration),
 		Props:     props,
+		FileIds:   fileIDs,
 	})
 	if appErr != nil {
 		return nil, fmt.Errorf("failed to create Upstage response post: %w", appErr)
