@@ -224,25 +224,35 @@ func TestParseBoundingBoxesRectFormat(t *testing.T) {
 	payload := parsePayloadJSON(t, `[{"x":10,"y":20,"width":100,"height":30}]`)
 	boxes := parseBoundingBoxes(payload)
 	require.Len(t, boxes, 1)
-	require.InDelta(t, 10.0, boxes[0][0][0], 0.01)
-	require.InDelta(t, 20.0, boxes[0][0][1], 0.01)
-	require.InDelta(t, 110.0, boxes[0][1][0], 0.01)
-	require.InDelta(t, 50.0, boxes[0][2][1], 0.01)
+	require.InDelta(t, 10.0, boxes[0].Polygon[0][0], 0.01)
+	require.InDelta(t, 20.0, boxes[0].Polygon[0][1], 0.01)
+	require.InDelta(t, 110.0, boxes[0].Polygon[1][0], 0.01)
+	require.InDelta(t, 50.0, boxes[0].Polygon[2][1], 0.01)
 }
 
 func TestParseBoundingBoxesVerticesFormat(t *testing.T) {
 	payload := parsePayloadJSON(t, `[{"vertices":[{"x":10,"y":20},{"x":110,"y":20},{"x":110,"y":50},{"x":10,"y":50}]}]`)
 	boxes := parseBoundingBoxes(payload)
 	require.Len(t, boxes, 1)
-	require.InDelta(t, 10.0, boxes[0][0][0], 0.01)
+	require.InDelta(t, 10.0, boxes[0].Polygon[0][0], 0.01)
+}
+
+func TestParseBoundingBoxesOACPageVertices(t *testing.T) {
+	// OAC format: {"page":1, "vertices":[...]}
+	payload := parsePayloadJSON(t, `[{"page":1,"vertices":[{"x":532,"y":176},{"x":586,"y":176},{"x":586,"y":198},{"x":532,"y":198}]}]`)
+	boxes := parseBoundingBoxes(payload)
+	require.Len(t, boxes, 1)
+	require.Equal(t, 1, boxes[0].PageNumber)
+	require.InDelta(t, 532.0, boxes[0].Polygon[0][0], 0.01)
+	require.InDelta(t, 198.0, boxes[0].Polygon[2][1], 0.01)
 }
 
 func TestParseBoundingBoxesFlatFormat(t *testing.T) {
 	payload := parsePayloadJSON(t, `[[10,20,110,20,110,50,10,50]]`)
 	boxes := parseBoundingBoxes(payload)
 	require.Len(t, boxes, 1)
-	require.InDelta(t, 10.0, boxes[0][0][0], 0.01)
-	require.InDelta(t, 50.0, boxes[0][2][1], 0.01)
+	require.InDelta(t, 10.0, boxes[0].Polygon[0][0], 0.01)
+	require.InDelta(t, 50.0, boxes[0].Polygon[2][1], 0.01)
 }
 
 func TestCollectMaskRegionsOACWithBoundingBoxes(t *testing.T) {
@@ -266,6 +276,68 @@ func TestCollectMaskRegionsOACWithBoundingBoxes(t *testing.T) {
 
 	regions := collectMaskRegions(payload, []string{"*"})
 	require.Len(t, regions, 2, "should find both rect and polygon format bounding boxes")
+}
+
+func TestCollectMaskRegionsOACExactResponse(t *testing.T) {
+	// Exact OAC response structure from the user.
+	payload := parsePayloadJSON(t, `{
+		"apiVersion": "1.1",
+		"confidence": 0.9902,
+		"documentType": "pii",
+		"fields": [
+			{
+				"boundingBoxes": [
+					{
+						"page": 1,
+						"vertices": [
+							{"x": 532, "y": 176},
+							{"x": 586, "y": 176},
+							{"x": 586, "y": 198},
+							{"x": 532, "y": 198}
+						]
+					}
+				],
+				"confidence": 0.9902,
+				"id": 0,
+				"key": "개인정보.이름",
+				"refinedValue": "박하영",
+				"type": "content",
+				"value": "박하영"
+			}
+		],
+		"metadata": {
+			"pages": [
+				{"height": 1755, "page": 1, "width": 1240}
+			]
+		}
+	}`)
+
+	regions := collectMaskRegions(payload, []string{"*"})
+	require.Len(t, regions, 1)
+	require.Equal(t, 1, regions[0].PageNumber)
+	require.InDelta(t, 532.0, regions[0].Polygon[0][0], 0.01)
+	require.InDelta(t, 176.0, regions[0].Polygon[0][1], 0.01)
+
+	sizes := extractPageSizes(payload)
+	require.Len(t, sizes, 1)
+	require.InDelta(t, 1240.0, sizes[1].Width, 0.01)
+	require.InDelta(t, 1755.0, sizes[1].Height, 0.01)
+}
+
+func TestExtractPageSizesMetadataPages(t *testing.T) {
+	payload := parsePayloadJSON(t, `{
+		"metadata": {
+			"pages": [
+				{"page": 1, "width": 1240, "height": 1755},
+				{"page": 2, "width": 1240, "height": 1755}
+			]
+		}
+	}`)
+	sizes := extractPageSizes(payload)
+	require.Len(t, sizes, 2)
+	require.InDelta(t, 1240.0, sizes[1].Width, 0.01)
+	require.InDelta(t, 1755.0, sizes[1].Height, 0.01)
+	require.InDelta(t, 1240.0, sizes[2].Width, 0.01)
 }
 
 func TestPolygonBounds(t *testing.T) {

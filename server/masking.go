@@ -57,14 +57,21 @@ func collectMaskRegionsRecursive(value any, allowedKeys []string, matchAll bool,
 		key := strings.TrimSpace(stringValue(typed["key"]))
 		if key != "" && (matchAll || matchesPIIKeyPrefix(key, allowedKeys)) {
 			bboxes := parseBoundingBoxes(typed["boundingBoxes"])
-			pageNum := 1
+			entityPage := 0
 			if pn, ok := intValue(typed["pageNumber"]); ok && pn > 0 {
-				pageNum = pn
+				entityPage = pn
 			}
-			for _, poly := range bboxes {
+			for _, bbox := range bboxes {
+				pageNum := bbox.PageNumber
+				if pageNum == 0 {
+					pageNum = entityPage
+				}
+				if pageNum == 0 {
+					pageNum = 1
+				}
 				*regions = append(*regions, maskRegion{
 					PageNumber: pageNum,
-					Polygon:    poly,
+					Polygon:    bbox.Polygon,
 				})
 			}
 		}
@@ -92,35 +99,44 @@ func matchesPIIKeyPrefix(key string, allowedKeys []string) bool {
 	return false
 }
 
-// parseBoundingBoxes converts the raw boundingBoxes field from the API into
-// typed polygon arrays.  Each polygon is 4 points of [x, y].
+// parsedBBox holds a parsed bounding box with an optional page number.
+type parsedBBox struct {
+	Polygon    [4][2]float64
+	PageNumber int // 0 if not specified inside the bbox
+}
+
+// parseBoundingBoxes converts the raw boundingBoxes field from the API.
 //
 // Supported formats:
-//   - UFP polygon:  [[[x1,y1],[x2,y2],[x3,y3],[x4,y4]]]
-//   - OAC rect obj: [{"x":10,"y":20,"width":100,"height":30}]
-//   - Flat array:   [[x1,y1,x2,y2,x3,y3,x4,y4]]
-//   - Vertices:     [{"vertices":[{"x":10,"y":20},{"x":110,"y":20},...]}]
-func parseBoundingBoxes(raw any) [][4][2]float64 {
+//   - UFP polygon:    [[[x1,y1],[x2,y2],[x3,y3],[x4,y4]]]
+//   - OAC vertices:   [{"page":1,"vertices":[{"x":532,"y":176},...]}]
+//   - OAC rect obj:   [{"x":10,"y":20,"width":100,"height":30}]
+//   - Flat array:     [[x1,y1,x2,y2,x3,y3,x4,y4]]
+func parseBoundingBoxes(raw any) []parsedBBox {
 	arr, ok := raw.([]any)
 	if !ok || len(arr) == 0 {
 		return nil
 	}
-	var result [][4][2]float64
+	var result []parsedBBox
 	for _, item := range arr {
+		// Try OAC format: {"page":1, "vertices":[...]} — must be before plain vertices
+		if bbox, ok := parsePageVerticesObject(item); ok {
+			result = append(result, bbox)
+			continue
+		}
+		// UFP polygon: [[x,y],[x,y],[x,y],[x,y]]
 		if poly, ok := parsePolygonPoints(item); ok {
-			result = append(result, poly)
+			result = append(result, parsedBBox{Polygon: poly})
 			continue
 		}
+		// Rect: {"x","y","width","height"}
 		if poly, ok := parseRectObject(item); ok {
-			result = append(result, poly)
+			result = append(result, parsedBBox{Polygon: poly})
 			continue
 		}
+		// Flat: [x1,y1,x2,y2,x3,y3,x4,y4]
 		if poly, ok := parseFlatCoords(item); ok {
-			result = append(result, poly)
-			continue
-		}
-		if poly, ok := parseVerticesObject(item); ok {
-			result = append(result, poly)
+			result = append(result, parsedBBox{Polygon: poly})
 			continue
 		}
 	}
@@ -197,30 +213,34 @@ func parseFlatCoords(item any) ([4][2]float64, bool) {
 	return poly, true
 }
 
-// parseVerticesObject handles {"vertices":[{"x":10,"y":20},{"x":110,"y":20},...]}
-func parseVerticesObject(item any) ([4][2]float64, bool) {
+// parsePageVerticesObject handles {"page":1,"vertices":[{"x":532,"y":176},...]}
+func parsePageVerticesObject(item any) (parsedBBox, bool) {
 	m, ok := item.(map[string]any)
 	if !ok {
-		return [4][2]float64{}, false
+		return parsedBBox{}, false
 	}
 	verts, ok := m["vertices"].([]any)
 	if !ok || len(verts) != 4 {
-		return [4][2]float64{}, false
+		return parsedBBox{}, false
 	}
 	var poly [4][2]float64
 	for i, v := range verts {
 		vm, ok := v.(map[string]any)
 		if !ok {
-			return [4][2]float64{}, false
+			return parsedBBox{}, false
 		}
 		x, xOK := toFloat64(vm["x"])
 		y, yOK := toFloat64(vm["y"])
 		if !xOK || !yOK {
-			return [4][2]float64{}, false
+			return parsedBBox{}, false
 		}
 		poly[i] = [2]float64{x, y}
 	}
-	return poly, true
+	pageNum := 0
+	if pn, ok := intValue(m["page"]); ok && pn > 0 {
+		pageNum = pn
+	}
+	return parsedBBox{Polygon: poly, PageNumber: pageNum}, true
 }
 
 func toFloat64(v any) (float64, bool) {
@@ -250,6 +270,7 @@ func extractPageSizes(payload any) map[int]pageSize {
 func extractPageSizesRecursive(value any, sizes map[int]pageSize) {
 	switch typed := value.(type) {
 	case map[string]any:
+		// UFP format: "pageSizes": [{"width":800,"height":600}, ...]
 		if psRaw, ok := typed["pageSizes"]; ok {
 			if psArr, ok := psRaw.([]any); ok {
 				for i, item := range psArr {
@@ -258,6 +279,27 @@ func extractPageSizesRecursive(value any, sizes map[int]pageSize) {
 						h, hOK := toFloat64(m["height"])
 						if wOK && hOK && w > 0 && h > 0 {
 							sizes[i+1] = pageSize{Width: w, Height: h}
+						}
+					}
+				}
+			}
+		}
+		// OAC format: "metadata": {"pages": [{"page":1,"width":1240,"height":1755}]}
+		// or "pages": [{"page":1,"width":1240,"height":1755}]
+		for _, pagesKey := range []string{"pages"} {
+			if psRaw, ok := typed[pagesKey]; ok {
+				if psArr, ok := psRaw.([]any); ok {
+					for i, item := range psArr {
+						if m, ok := item.(map[string]any); ok {
+							w, wOK := toFloat64(m["width"])
+							h, hOK := toFloat64(m["height"])
+							if wOK && hOK && w > 0 && h > 0 {
+								pageNum := i + 1
+								if pn, ok := intValue(m["page"]); ok && pn > 0 {
+									pageNum = pn
+								}
+								sizes[pageNum] = pageSize{Width: w, Height: h}
+							}
 						}
 					}
 				}
