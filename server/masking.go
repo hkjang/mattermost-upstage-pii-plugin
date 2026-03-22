@@ -15,7 +15,7 @@ import (
 	_ "golang.org/x/image/tiff"
 
 	"github.com/pdfcpu/pdfcpu/pkg/api"
-	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
+	pdfmodel "github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
 )
 
@@ -347,21 +347,13 @@ func maskPDFFile(content []byte, regions []maskRegion, pageSizes map[int]pageSiz
 }
 
 func maskPDFFileInternal(content []byte, regions []maskRegion, pageSizes map[int]pageSize) ([]byte, error) {
-	conf := model.NewDefaultConfiguration()
-	conf.ValidationMode = model.ValidationRelaxed
+	conf := pdfmodel.NewDefaultConfiguration()
+	conf.ValidationMode = pdfmodel.ValidationRelaxed
 
 	// Get page dimensions from the PDF.
 	pdfPageDims, err := api.PageDims(bytes.NewReader(content), conf)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read PDF page dimensions: %w", err)
-	}
-
-	ctx, err := api.ReadContext(bytes.NewReader(content), conf)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read PDF: %w", err)
-	}
-	if err := ctx.EnsurePageCount(); err != nil {
-		return nil, fmt.Errorf("failed to get PDF page count: %w", err)
 	}
 
 	// Group regions by page.
@@ -370,22 +362,19 @@ func maskPDFFileInternal(content []byte, regions []maskRegion, pageSizes map[int
 		byPage[r.PageNumber] = append(byPage[r.PageNumber], r)
 	}
 
+	// Build watermark map: one stamp per region per page.
+	// pdfcpu AddWatermarksMap takes map[pageNum]*Watermark for a single
+	// watermark per page. For multiple regions on the same page we use
+	// AddWatermarksSliceMap which takes map[pageNum][]*Watermark.
+	wmMap := map[int][]*pdfmodel.Watermark{}
+
 	for pageNum, pageRegions := range byPage {
-		if pageNum < 1 || pageNum > ctx.PageCount {
+		if pageNum < 1 || pageNum > len(pdfPageDims) {
 			continue
 		}
+		pdfW := pdfPageDims[pageNum-1].Width
+		pdfH := pdfPageDims[pageNum-1].Height
 
-		// PDF page dimensions (in points, 1-indexed).
-		var pdfW, pdfH float64
-		if pageNum <= len(pdfPageDims) {
-			pdfW = pdfPageDims[pageNum-1].Width
-			pdfH = pdfPageDims[pageNum-1].Height
-		} else {
-			pdfW = 612
-			pdfH = 792
-		}
-
-		// Determine scale from API coordinates to PDF coordinates.
 		apiW, apiH := pdfW, pdfH
 		if ps, ok := pageSizes[pageNum]; ok && ps.Width > 0 && ps.Height > 0 {
 			apiW = ps.Width
@@ -394,67 +383,61 @@ func maskPDFFileInternal(content []byte, regions []maskRegion, pageSizes map[int
 		scaleX := pdfW / apiW
 		scaleY := pdfH / apiH
 
-		// Build PDF content stream with black rectangles.
-		var sb strings.Builder
-		sb.WriteString("q\n0 0 0 rg\n")
 		for _, region := range pageRegions {
 			minX, minY, maxX, maxY := polygonBounds(region.Polygon)
-			// Convert from top-left origin to PDF bottom-left origin.
-			pdfX := minX * scaleX
-			pdfY := pdfH - maxY*scaleY
+			x := minX * scaleX
+			y := minY * scaleY
 			w := (maxX - minX) * scaleX
 			h := (maxY - minY) * scaleY
-			sb.WriteString(fmt.Sprintf("%.2f %.2f %.2f %.2f re f\n", pdfX, pdfY, w, h))
-		}
-		sb.WriteString("Q\n")
+			if w < 1 || h < 1 {
+				continue
+			}
 
-		err = addContentStreamToPage(ctx, pageNum, sb.String())
-		if err != nil {
-			return nil, fmt.Errorf("failed to add mask to PDF page %d: %w", pageNum, err)
+			// Create a black image exactly the size of the region (in points → pixels at 1:1).
+			regionImg := createBlackPNGSized(int(math.Ceil(w)), int(math.Ceil(h)))
+
+			pdfY := pdfH - y - h // top-left origin to bottom-left
+			desc := fmt.Sprintf("pos:bl, off:%.1f %.1f, sc:1.0 abs, rot:0, op:1", x, pdfY)
+
+			wm, wmErr := api.ImageWatermarkForReader(
+				bytes.NewReader(regionImg),
+				desc,
+				true,  // onTop (stamp)
+				false, // update
+				types.POINTS,
+			)
+			if wmErr != nil {
+				continue
+			}
+
+			wmMap[pageNum] = append(wmMap[pageNum], wm)
 		}
 	}
 
+	if len(wmMap) == 0 {
+		return nil, fmt.Errorf("no valid watermark regions to apply")
+	}
+
 	var buf bytes.Buffer
-	if err := api.WriteContext(ctx, &buf); err != nil {
-		return nil, fmt.Errorf("failed to write masked PDF: %w", err)
+	if err := api.AddWatermarksSliceMap(bytes.NewReader(content), &buf, wmMap, conf); err != nil {
+		return nil, fmt.Errorf("failed to apply PDF stamps: %w", err)
 	}
 	return buf.Bytes(), nil
 }
 
-// addContentStreamToPage appends a content stream to an existing PDF page.
-func addContentStreamToPage(ctx *model.Context, pageNum int, content string) error {
-	pgDict, _, _, err := ctx.PageDict(pageNum, false)
-	if err != nil {
-		return err
+// createBlackPNGSized creates a black PNG image of the given dimensions.
+func createBlackPNGSized(w, h int) []byte {
+	if w < 1 {
+		w = 1
 	}
-
-	sd := &types.StreamDict{
-		Dict: types.Dict(map[string]types.Object{
-			"Length": types.Integer(len(content)),
-		}),
-		Content: []byte(content),
+	if h < 1 {
+		h = 1
 	}
-	sd.InsertName("Filter", "")
-
-	ref, err := ctx.IndRefForNewObject(*sd)
-	if err != nil {
-		return err
-	}
-
-	// Get current Contents entry and build an array including the new stream.
-	contentsEntry, found := pgDict.Find("Contents")
-	var arr types.Array
-	if found && contentsEntry != nil {
-		switch v := contentsEntry.(type) {
-		case types.Array:
-			arr = v
-		default:
-			arr = types.Array{v}
-		}
-	}
-	arr = append(arr, *ref)
-	pgDict["Contents"] = arr
-	return nil
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	draw.Draw(img, img.Bounds(), image.NewUniform(color.Black), image.Point{}, draw.Src)
+	var buf bytes.Buffer
+	_ = png.Encode(&buf, img)
+	return buf.Bytes()
 }
 
 // isImageMIME returns true for image MIME types that can be masked.

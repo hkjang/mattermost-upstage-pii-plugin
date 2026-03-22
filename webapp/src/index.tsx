@@ -59,6 +59,8 @@ export default class Plugin {
     private readonly postEventListener = new PostEventListener();
 
     public async initialize(registry: PluginRegistry, store: Store<GlobalState>) {
+        // eslint-disable-next-line no-console
+        console.log(`[${manifest.id}] webapp loaded — v0.2.5 build ${Date.now()}`);
         let siteURL = store.getState().entities.general.config.SiteURL;
         if (!siteURL) {
             siteURL = window.location.origin;

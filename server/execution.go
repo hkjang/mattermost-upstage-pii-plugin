@@ -399,10 +399,22 @@ func collectPIIFieldEntriesRecursive(value any, seen map[string]struct{}, entrie
 	switch typed := value.(type) {
 	case map[string]any:
 		key := normalizePIIFieldKey(extractPIIFieldValue(typed["key"]))
+		if key == "" {
+			key = normalizePIIFieldKey(extractPIIFieldValue(typed["name"]))
+		}
+		if key == "" {
+			key = normalizePIIFieldKey(extractPIIFieldValue(typed["label"]))
+		}
 		fieldType := strings.ToLower(strings.TrimSpace(stringValue(typed["type"])))
 		fieldValue := extractPIIFieldValue(typed["refinedValue"])
 		if fieldValue == "" {
 			fieldValue = extractPIIFieldValue(typed["value"])
+		}
+		if fieldValue == "" {
+			fieldValue = extractPIIFieldValue(typed["chips"])
+		}
+		if fieldValue == "" {
+			fieldValue = extractPIIFieldValue(typed["content"])
 		}
 		if key != "" && fieldValue != "" {
 			signature := key + "\x00" + fieldValue
