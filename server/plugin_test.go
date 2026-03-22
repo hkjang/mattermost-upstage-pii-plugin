@@ -287,6 +287,107 @@ func TestBuildDocumentResponseMessageSupportsLocalizedPIIKeys(t *testing.T) {
 	require.Contains(t, message, "`개인정보.상세주소`: `서울시 강남구`")
 }
 
+func TestBuildDocumentResponseMessageFallsBackToFullResponseBody(t *testing.T) {
+	// When result field is null but the full response body contains PII fields,
+	// the fallback should extract them from ResponseDebug.Body.
+	message := buildDocumentResponseMessage("", []upstageDocumentResult{{
+		Attachment: botAttachment{Name: "passport.jpg"},
+		Response: upstageParseResponse{
+			Model: "pii",
+			Type:  "document",
+		},
+		ResponseDebug: upstageResponseDebug{
+			StatusCode: 200,
+			Body: `{
+  "api": "v1",
+  "model": "pii",
+  "type": "document",
+  "result": {
+    "documentType": "passport",
+    "fields": [
+      {"key": "개인정보.이름", "refinedValue": "김철수", "confidence": 0.98},
+      {"key": "개인정보.여권번호", "refinedValue": "M12345678", "confidence": 0.95}
+    ]
+  }
+}`,
+		},
+	}}, 20000)
+
+	require.Contains(t, message, "`개인정보.이름`: `김철수`")
+	require.Contains(t, message, "`개인정보.여권번호`: `M12345678`")
+	require.NotContains(t, message, "추출된 개인정보 필드가 없습니다")
+}
+
+func TestBuildDocumentResponseMessageFallsBackToTopLevelFields(t *testing.T) {
+	// When result field is null and PII fields are at the top level of the response body.
+	message := buildDocumentResponseMessage("", []upstageDocumentResult{{
+		Attachment: botAttachment{Name: "id-card.jpg"},
+		Response: upstageParseResponse{
+			Model: "pii",
+			Type:  "document",
+		},
+		ResponseDebug: upstageResponseDebug{
+			StatusCode: 200,
+			Body: `{
+  "documentType": "id_card",
+  "fields": [
+    {"key": "개인정보.이름", "refinedValue": "홍길동", "confidence": 0.99},
+    {"key": "개인정보.생년월일", "refinedValue": "1990-01-01", "entityConfidence": 0.97}
+  ]
+}`,
+		},
+	}}, 20000)
+
+	require.Contains(t, message, "`개인정보.이름`: `홍길동`")
+	require.Contains(t, message, "`개인정보.생년월일`: `1990-01-01`")
+	require.NotContains(t, message, "추출된 개인정보 필드가 없습니다")
+}
+
+func TestBuildDocumentResponseMessageExtractsExactAPIResponse(t *testing.T) {
+	// Exact API response format provided by user.
+	apiResponseBody := `{
+  "result": {
+    "apiVersion": "1.1",
+    "documentType": "kr-personal-id",
+    "confidence": 0.95,
+    "fields": [
+      {
+        "id": 0,
+        "key": "개인정보.이름",
+        "type": "content",
+        "value": "홍길동",
+        "confidence": 0.98
+      },
+      {
+        "id": 1,
+        "key": "개인정보.주민등록번호",
+        "type": "content",
+        "value": "900101-1XXXXXX",
+        "confidence": 0.96
+      }
+    ]
+  },
+  "type": "document",
+  "numBilledPages": 1
+}`
+	var parsed upstageParseResponse
+	require.NoError(t, json.Unmarshal([]byte(apiResponseBody), &parsed))
+
+	message := buildDocumentResponseMessage("", []upstageDocumentResult{{
+		Attachment: botAttachment{Name: "id-card.jpg"},
+		Response:   parsed,
+		ResponseDebug: upstageResponseDebug{
+			StatusCode: 200,
+			Body:       apiResponseBody,
+		},
+	}}, 20000)
+
+	t.Logf("message:\n%s", message)
+	require.Contains(t, message, "`개인정보.이름`: `홍길동`")
+	require.Contains(t, message, "`개인정보.주민등록번호`: `900101-1XXXXXX`")
+	require.NotContains(t, message, "추출된 개인정보 필드가 없습니다")
+}
+
 func TestBuildBotResponseMessageIncludesAPIDuration(t *testing.T) {
 	message := buildBotResponseMessage("파싱 완료", "corr-123", 2350*time.Millisecond)
 

@@ -248,6 +248,18 @@ func buildPIIResultSection(result upstageDocumentResult) string {
 	payload := parsePIIResultPayload(result.Response.Result)
 	entries := collectPIIFieldEntries(payload)
 
+	// Fallback: if no entries found from the result field, try the full response body.
+	// Some API responses place PII fields outside the "result" key.
+	if len(entries) == 0 && strings.TrimSpace(result.ResponseDebug.Body) != "" {
+		fullPayload := parseDebugPayloadString(result.ResponseDebug.Body)
+		if fullPayload != nil {
+			entries = collectPIIFieldEntries(fullPayload)
+			if payload == nil {
+				payload = fullPayload
+			}
+		}
+	}
+
 	lines := []string{
 		fmt.Sprintf("### %s", result.Attachment.Name),
 		fmt.Sprintf("- Model: `%s`", defaultIfEmpty(strings.TrimSpace(result.Response.Model), defaultUpstageModel)),

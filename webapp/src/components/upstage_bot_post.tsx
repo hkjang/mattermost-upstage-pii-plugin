@@ -160,7 +160,7 @@ export default function UpstageBotPost(props: Props) {
     const outputDebug = firstDefinedDebug(remoteResponseDebug, localOutputDebug);
     const hasRemoteDebugSource = Boolean(props.post?.id && props.post?.props?.upstage_correlation_id);
     const hasInputDebug = hasDebugFlag(props.post?.props?.upstage_has_request_debug) || localInputDebug !== '' || hasRemoteDebugSource;
-    const hasOutputDebug = hasDebugFlag(props.post?.props?.upstage_has_response_debug) || localOutputDebug !== '' || hasRemoteDebugSource;
+    const hasOutputDebug = hasDebugFlag(props.post?.props?.upstage_has_response_debug) || localOutputDebug !== '' || hasRemoteDebugSource || hasInputDebug;
     const canShowDebug = hasInputDebug || hasOutputDebug;
     const debugModalTitle = activeDebugSection === 'response' ? 'PII API 응답 JSON' : 'PII API 요청 파라미터';
 
