@@ -163,6 +163,26 @@ func (p *Plugin) executeBotAndPost(ctx context.Context, request BotRunRequest) (
 		requestDebugs = append(requestDebugs, result.RequestDebugs...)
 	}
 
+	// Debug: log result payload info for each attachment.
+	for i, result := range results {
+		resultLen := len(string(result.Response.Result))
+		bodyLen := len(result.ResponseDebug.Body)
+		payload := parsePIIResultPayload(result.Response.Result)
+		entries := collectPIIFieldEntries(payload)
+		schema := detectPIIResultSchema(payload)
+		p.API.LogInfo("PII result debug",
+			"index", i,
+			"file", result.Attachment.Name,
+			"mime", result.Attachment.MIMEType,
+			"schema", schema,
+			"result_len", resultLen,
+			"body_len", bodyLen,
+			"entries_from_result", len(entries),
+			"result_nil", payload == nil,
+			"correlation_id", correlationID,
+		)
+	}
+
 	shouldMaskSensitive := bot.shouldMaskSensitiveData(cfg.MaskSensitiveData)
 	documentContext := buildDocumentResponseMessage(prompt, results, cfg.MaxOutputLength)
 	if shouldMaskSensitive {

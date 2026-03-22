@@ -94,38 +94,133 @@ func matchesPIIKeyPrefix(key string, allowedKeys []string) bool {
 
 // parseBoundingBoxes converts the raw boundingBoxes field from the API into
 // typed polygon arrays.  Each polygon is 4 points of [x, y].
+//
+// Supported formats:
+//   - UFP polygon:  [[[x1,y1],[x2,y2],[x3,y3],[x4,y4]]]
+//   - OAC rect obj: [{"x":10,"y":20,"width":100,"height":30}]
+//   - Flat array:   [[x1,y1,x2,y2,x3,y3,x4,y4]]
+//   - Vertices:     [{"vertices":[{"x":10,"y":20},{"x":110,"y":20},...]}]
 func parseBoundingBoxes(raw any) [][4][2]float64 {
 	arr, ok := raw.([]any)
 	if !ok || len(arr) == 0 {
 		return nil
 	}
 	var result [][4][2]float64
-	for _, polyRaw := range arr {
-		polyArr, ok := polyRaw.([]any)
-		if !ok || len(polyArr) != 4 {
+	for _, item := range arr {
+		if poly, ok := parsePolygonPoints(item); ok {
+			result = append(result, poly)
 			continue
 		}
-		var poly [4][2]float64
-		valid := true
-		for i, ptRaw := range polyArr {
-			ptArr, ok := ptRaw.([]any)
-			if !ok || len(ptArr) != 2 {
-				valid = false
-				break
-			}
-			x, xOK := toFloat64(ptArr[0])
-			y, yOK := toFloat64(ptArr[1])
-			if !xOK || !yOK {
-				valid = false
-				break
-			}
-			poly[i] = [2]float64{x, y}
-		}
-		if valid {
+		if poly, ok := parseRectObject(item); ok {
 			result = append(result, poly)
+			continue
+		}
+		if poly, ok := parseFlatCoords(item); ok {
+			result = append(result, poly)
+			continue
+		}
+		if poly, ok := parseVerticesObject(item); ok {
+			result = append(result, poly)
+			continue
 		}
 	}
 	return result
+}
+
+// parsePolygonPoints handles [[x1,y1],[x2,y2],[x3,y3],[x4,y4]]
+func parsePolygonPoints(item any) ([4][2]float64, bool) {
+	polyArr, ok := item.([]any)
+	if !ok || len(polyArr) != 4 {
+		return [4][2]float64{}, false
+	}
+	var poly [4][2]float64
+	for i, ptRaw := range polyArr {
+		ptArr, ok := ptRaw.([]any)
+		if !ok || len(ptArr) != 2 {
+			return [4][2]float64{}, false
+		}
+		x, xOK := toFloat64(ptArr[0])
+		y, yOK := toFloat64(ptArr[1])
+		if !xOK || !yOK {
+			return [4][2]float64{}, false
+		}
+		poly[i] = [2]float64{x, y}
+	}
+	return poly, true
+}
+
+// parseRectObject handles {"x":10,"y":20,"width":100,"height":30}
+func parseRectObject(item any) ([4][2]float64, bool) {
+	m, ok := item.(map[string]any)
+	if !ok {
+		return [4][2]float64{}, false
+	}
+	x, xOK := rectFloat(m, "x")
+	y, yOK := rectFloat(m, "y")
+	if !xOK || !yOK {
+		return [4][2]float64{}, false
+	}
+	w, wOK := rectFloat(m, "width", "w")
+	h, hOK := rectFloat(m, "height", "h")
+	if !wOK || !hOK {
+		return [4][2]float64{}, false
+	}
+	return [4][2]float64{
+		{x, y}, {x + w, y}, {x + w, y + h}, {x, y + h},
+	}, true
+}
+
+func rectFloat(m map[string]any, keys ...string) (float64, bool) {
+	for _, k := range keys {
+		if v, ok := toFloat64(m[k]); ok {
+			return v, true
+		}
+	}
+	return 0, false
+}
+
+// parseFlatCoords handles [x1,y1,x2,y2,x3,y3,x4,y4]
+func parseFlatCoords(item any) ([4][2]float64, bool) {
+	arr, ok := item.([]any)
+	if !ok || len(arr) != 8 {
+		return [4][2]float64{}, false
+	}
+	var poly [4][2]float64
+	for i := 0; i < 4; i++ {
+		x, xOK := toFloat64(arr[i*2])
+		y, yOK := toFloat64(arr[i*2+1])
+		if !xOK || !yOK {
+			return [4][2]float64{}, false
+		}
+		poly[i] = [2]float64{x, y}
+	}
+	return poly, true
+}
+
+// parseVerticesObject handles {"vertices":[{"x":10,"y":20},{"x":110,"y":20},...]}
+func parseVerticesObject(item any) ([4][2]float64, bool) {
+	m, ok := item.(map[string]any)
+	if !ok {
+		return [4][2]float64{}, false
+	}
+	verts, ok := m["vertices"].([]any)
+	if !ok || len(verts) != 4 {
+		return [4][2]float64{}, false
+	}
+	var poly [4][2]float64
+	for i, v := range verts {
+		vm, ok := v.(map[string]any)
+		if !ok {
+			return [4][2]float64{}, false
+		}
+		x, xOK := toFloat64(vm["x"])
+		y, yOK := toFloat64(vm["y"])
+		if !xOK || !yOK {
+			return [4][2]float64{}, false
+		}
+		poly[i] = [2]float64{x, y}
+	}
+	return poly, true
 }
 
 func toFloat64(v any) (float64, bool) {

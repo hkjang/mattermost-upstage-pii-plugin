@@ -219,6 +219,55 @@ func TestDetectPIIResultSchemaUFP(t *testing.T) {
 	require.Equal(t, "ufp", detectPIIResultSchema(payload))
 }
 
+func TestParseBoundingBoxesRectFormat(t *testing.T) {
+	// OAC rect format: [{"x":10,"y":20,"width":100,"height":30}]
+	payload := parsePayloadJSON(t, `[{"x":10,"y":20,"width":100,"height":30}]`)
+	boxes := parseBoundingBoxes(payload)
+	require.Len(t, boxes, 1)
+	require.InDelta(t, 10.0, boxes[0][0][0], 0.01)
+	require.InDelta(t, 20.0, boxes[0][0][1], 0.01)
+	require.InDelta(t, 110.0, boxes[0][1][0], 0.01)
+	require.InDelta(t, 50.0, boxes[0][2][1], 0.01)
+}
+
+func TestParseBoundingBoxesVerticesFormat(t *testing.T) {
+	payload := parsePayloadJSON(t, `[{"vertices":[{"x":10,"y":20},{"x":110,"y":20},{"x":110,"y":50},{"x":10,"y":50}]}]`)
+	boxes := parseBoundingBoxes(payload)
+	require.Len(t, boxes, 1)
+	require.InDelta(t, 10.0, boxes[0][0][0], 0.01)
+}
+
+func TestParseBoundingBoxesFlatFormat(t *testing.T) {
+	payload := parsePayloadJSON(t, `[[10,20,110,20,110,50,10,50]]`)
+	boxes := parseBoundingBoxes(payload)
+	require.Len(t, boxes, 1)
+	require.InDelta(t, 10.0, boxes[0][0][0], 0.01)
+	require.InDelta(t, 50.0, boxes[0][2][1], 0.01)
+}
+
+func TestCollectMaskRegionsOACWithBoundingBoxes(t *testing.T) {
+	payload := parsePayloadJSON(t, `{
+		"documentType": "id_card",
+		"fields": [
+			{
+				"key": "개인정보.이름",
+				"value": "홍길동",
+				"confidence": 0.98,
+				"boundingBoxes": [{"x": 120, "y": 45, "width": 160, "height": 33}]
+			},
+			{
+				"key": "개인정보.주민등록번호",
+				"value": "900101-1XXXXXX",
+				"confidence": 0.96,
+				"boundingBoxes": [[[120,90],[380,90],[380,120],[120,120]]]
+			}
+		]
+	}`)
+
+	regions := collectMaskRegions(payload, []string{"*"})
+	require.Len(t, regions, 2, "should find both rect and polygon format bounding boxes")
+}
+
 func TestPolygonBounds(t *testing.T) {
 	poly := [4][2]float64{{10, 20}, {100, 20}, {100, 50}, {10, 50}}
 	minX, minY, maxX, maxY := polygonBounds(poly)
