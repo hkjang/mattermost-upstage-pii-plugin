@@ -1,7 +1,7 @@
 {
     "id": "com.mattermost.upstage-pii-masking",
     "name": "Upstage PII Masking",
-    "version": "0.2.3",
+    "version": "0.2.4",
     "description": "Mattermost의 파일 첨부를 DocAI Controller PII Inference API로 보내 개인정보를 추출하고 마스킹해 주는 전용 봇 플러그인입니다.",
     "homepage_url": "",
     "support_url": "",

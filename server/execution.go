@@ -170,6 +170,18 @@ func (p *Plugin) executeBotAndPost(ctx context.Context, request BotRunRequest) (
 		payload := parsePIIResultPayload(result.Response.Result)
 		entries := collectPIIFieldEntries(payload)
 		schema := detectPIIResultSchema(payload)
+
+		// Also check fallback (full body).
+		var fallbackEntries int
+		var fallbackSchema string
+		if len(entries) == 0 && bodyLen > 0 {
+			fullPayload := parseDebugPayloadString(result.ResponseDebug.Body)
+			if fullPayload != nil {
+				fallbackEntries = len(collectPIIFieldEntries(fullPayload))
+				fallbackSchema = detectPIIResultSchema(fullPayload)
+			}
+		}
+
 		p.API.LogInfo("PII result debug",
 			"index", i,
 			"file", result.Attachment.Name,
@@ -178,9 +190,23 @@ func (p *Plugin) executeBotAndPost(ctx context.Context, request BotRunRequest) (
 			"result_len", resultLen,
 			"body_len", bodyLen,
 			"entries_from_result", len(entries),
+			"fallback_entries", fallbackEntries,
+			"fallback_schema", fallbackSchema,
 			"result_nil", payload == nil,
 			"correlation_id", correlationID,
 		)
+
+		// Log first 500 chars of body when result is empty to help diagnose structure.
+		if resultLen == 0 && bodyLen > 0 {
+			preview := result.ResponseDebug.Body
+			if len(preview) > 500 {
+				preview = preview[:500] + "..."
+			}
+			p.API.LogInfo("PII response body preview",
+				"file", result.Attachment.Name,
+				"preview", preview,
+			)
+		}
 	}
 
 	shouldMaskSensitive := bot.shouldMaskSensitiveData(cfg.MaskSensitiveData)

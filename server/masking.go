@@ -335,7 +335,18 @@ func maskImageFile(content []byte, mimeType string, regions []maskRegion, pageSi
 }
 
 // maskPDFFile adds black rectangles to the specified pages of a PDF document.
-func maskPDFFile(content []byte, regions []maskRegion, pageSizes map[int]pageSize) ([]byte, error) {
+// Wrapped with recover to prevent plugin crashes from pdfcpu panics.
+func maskPDFFile(content []byte, regions []maskRegion, pageSizes map[int]pageSize) (result []byte, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("pdfcpu panic: %v", r)
+			result = nil
+		}
+	}()
+	return maskPDFFileInternal(content, regions, pageSizes)
+}
+
+func maskPDFFileInternal(content []byte, regions []maskRegion, pageSizes map[int]pageSize) ([]byte, error) {
 	conf := model.NewDefaultConfiguration()
 	conf.ValidationMode = model.ValidationRelaxed
 
@@ -509,12 +520,14 @@ func (p *Plugin) maskAndUploadFiles(results []upstageDocumentResult, channelID s
 			continue
 		}
 		if err != nil {
-			return fileIDs, fmt.Errorf("failed to mask %s: %w", result.Attachment.Name, err)
+			p.API.LogWarn("maskAndUploadFiles: masking failed, skipping", "file", result.Attachment.Name, "error", err.Error())
+			continue
 		}
 
 		fileInfo, appErr := p.API.UploadFile(maskedContent, channelID, maskedFilename(result.Attachment.Name))
 		if appErr != nil {
-			return fileIDs, fmt.Errorf("failed to upload masked file %s: %w", result.Attachment.Name, appErr)
+			p.API.LogWarn("maskAndUploadFiles: upload failed, skipping", "file", result.Attachment.Name, "error", appErr.Error())
+			continue
 		}
 		fileIDs = append(fileIDs, fileInfo.Id)
 	}
