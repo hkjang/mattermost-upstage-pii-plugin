@@ -19,6 +19,7 @@ export type BotDefinition = {
     schema?: string;
     verbose?: boolean;
     mask_sensitive_data?: boolean;
+    mask_pii_keys?: string[];
     vllm_base_url?: string;
     vllm_api_key?: string;
     vllm_model?: string;

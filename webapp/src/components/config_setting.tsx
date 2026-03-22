@@ -22,6 +22,7 @@ type DraftBot = {
     schema: string;
     verbose: boolean;
     mask_sensitive_data: boolean;
+    mask_pii_keys: string[];
     vllm_base_url: string;
     vllm_api_key: string;
     vllm_model: string;
@@ -241,6 +242,10 @@ function renderPlaceholder(args: {
                         <label><input disabled={disabled} type='checkbox' checked={bot.verbose} onChange={(e) => updateBot(bot.local_id, {verbose: e.target.checked})}/>{' verbose (bounding box 포함)'}</label>
                         <label><input disabled={disabled} type='checkbox' checked={bot.mask_sensitive_data} onChange={(e) => updateBot(bot.local_id, {mask_sensitive_data: e.target.checked})}/>{' 개인정보 마스킹'}</label>
                         <span style={note}>{'마스킹 대상: 이메일 주소, 한국 휴대폰/전화번호, 주민등록번호, 13자리 이상 카드/계좌/식별번호 형태의 숫자열'}</span>
+                        <Field label={'파일 마스킹 PII 키'}>
+                            <input disabled={disabled} style={field} value={join(bot.mask_pii_keys)} placeholder={'* 또는 개인정보.이름, 개인정보.주민등록번호'} onChange={(e) => updateBot(bot.local_id, {mask_pii_keys: split(e.target.value)})}/>
+                        </Field>
+                        <span style={note}>{'boundingBox가 있는 PII 필드를 원본 파일(이미지/PDF)에 검은 박스로 마스킹합니다. * 입력 시 모든 필드, 쉼표로 구분하여 특정 필드만 지정 가능. 비워두면 파일 마스킹 비활성화.'}</span>
                         <div style={{...box, display: 'flex', flexDirection: 'column', gap: 8}}>
                             <strong>{'vLLM 후처리'}</strong>
                             <span style={note}>{'vLLM URL과 모델을 입력하면 추출된 PII 필드 요약을 기반으로 한 번 더 LLM 응답을 생성합니다. 프롬프트에서 {{user_message}}, {{document_text}} 를 사용할 수 있습니다.'}</span>
@@ -381,6 +386,7 @@ function buildConfig(config: DraftConfig): AdminPluginConfig {
             schema: schema(item.schema),
             verbose: Boolean(item.verbose),
             mask_sensitive_data: Boolean(item.mask_sensitive_data),
+            mask_pii_keys: item.mask_pii_keys.filter((k) => k.trim() !== ''),
             vllm_base_url: item.vllm_base_url.trim(),
             vllm_api_key: item.vllm_api_key.trim(),
             vllm_model: item.vllm_model.trim(),
@@ -406,6 +412,7 @@ function normalizeBot(value: Partial<BotDefinition>, index = 0, inheritedMaskSen
         schema: schema(text(value.schema)),
         verbose: Boolean(value.verbose),
         mask_sensitive_data: value.mask_sensitive_data ?? inheritedMaskSensitive,
+        mask_pii_keys: Array.isArray(value.mask_pii_keys) ? value.mask_pii_keys.map(String) : [],
         vllm_base_url: text(value.vllm_base_url),
         vllm_api_key: text(value.vllm_api_key),
         vllm_model: text(value.vllm_model),
@@ -504,6 +511,7 @@ function emptyBot(inheritedMaskSensitive = true): DraftBot {
         schema: defaultSchema,
         verbose: false,
         mask_sensitive_data: inheritedMaskSensitive,
+        mask_pii_keys: [],
         vllm_base_url: '',
         vllm_api_key: '',
         vllm_model: '',

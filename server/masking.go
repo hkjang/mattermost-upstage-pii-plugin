@@ -378,6 +378,8 @@ func (p *Plugin) maskAndUploadFiles(results []upstageDocumentResult, channelID s
 		return nil, nil
 	}
 
+	p.API.LogInfo("maskAndUploadFiles: starting", "files", len(results), "allowedKeys", strings.Join(allowedKeys, ","))
+
 	var fileIDs []string
 	for _, result := range results {
 		payload := parsePIIResultPayload(result.Response.Result)
@@ -386,13 +388,17 @@ func (p *Plugin) maskAndUploadFiles(results []upstageDocumentResult, channelID s
 			payload = parseDebugPayloadString(result.ResponseDebug.Body)
 		}
 		if payload == nil {
+			p.API.LogWarn("maskAndUploadFiles: no parseable payload", "file", result.Attachment.Name)
 			continue
 		}
 
 		regions := collectMaskRegions(payload, allowedKeys)
 		if len(regions) == 0 {
+			p.API.LogInfo("maskAndUploadFiles: no matching regions", "file", result.Attachment.Name)
 			continue
 		}
+
+		p.API.LogInfo("maskAndUploadFiles: masking", "file", result.Attachment.Name, "mime", result.Attachment.MIMEType, "regions", len(regions))
 
 		pageSizes := extractPageSizes(payload)
 		mime := result.Attachment.MIMEType
