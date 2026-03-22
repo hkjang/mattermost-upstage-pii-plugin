@@ -135,20 +135,11 @@ const debugPreStyle: React.CSSProperties = {
     wordBreak: 'break-word',
 };
 
-const tabRowStyle: React.CSSProperties = {
-    display: 'flex',
-    flexWrap: 'wrap',
-    gap: '8px',
-};
-
-type DebugSection = 'request' | 'response';
-
 export default function UpstageBotPost(props: Props) {
     const [message, setMessage] = useState(getRenderableMessage(props.post));
     const [generating, setGenerating] = useState(isStreamingPost(props.post));
     const [precontent, setPrecontent] = useState(isUpstageAwaitingFirstChunk(props.post));
     const [showDebugModal, setShowDebugModal] = useState(false);
-    const [activeDebugSection, setActiveDebugSection] = useState<DebugSection>('request');
     const [remoteRequestDebug, setRemoteRequestDebug] = useState('');
     const [remoteResponseDebug, setRemoteResponseDebug] = useState('');
     const [debugLoading, setDebugLoading] = useState(false);
@@ -159,10 +150,7 @@ export default function UpstageBotPost(props: Props) {
     const inputDebug = firstDefinedDebug(remoteRequestDebug, localInputDebug);
     const outputDebug = firstDefinedDebug(remoteResponseDebug, localOutputDebug);
     const hasRemoteDebugSource = Boolean(props.post?.id && props.post?.props?.upstage_correlation_id);
-    const hasInputDebug = hasDebugFlag(props.post?.props?.upstage_has_request_debug) || localInputDebug !== '' || hasRemoteDebugSource;
-    const hasOutputDebug = hasDebugFlag(props.post?.props?.upstage_has_response_debug) || localOutputDebug !== '' || hasRemoteDebugSource || hasInputDebug;
-    const canShowDebug = hasInputDebug || hasOutputDebug;
-    const debugModalTitle = activeDebugSection === 'response' ? 'PII API 응답 JSON' : 'PII API 요청 파라미터';
+    const canShowDebug = hasDebugFlag(props.post?.props?.upstage_has_request_debug) || localInputDebug !== '' || hasRemoteDebugSource;
 
     useEffect(() => {
         setMessage(getRenderableMessage(props.post));
@@ -173,7 +161,6 @@ export default function UpstageBotPost(props: Props) {
         setRemoteResponseDebug('');
         setDebugLoading(false);
         setDebugError('');
-        setActiveDebugSection((props.post?.props?.upstage_has_response_debug || props.post?.props?.upstage_response_output) ? 'response' : 'request');
     }, [
         props.post.id,
         props.post.message,
@@ -282,22 +269,9 @@ export default function UpstageBotPost(props: Props) {
                     <button
                         style={buttonStyle}
                         type='button'
-                        onClick={() => {
-                            setActiveDebugSection('request');
-                            setShowDebugModal(true);
-                        }}
+                        onClick={() => setShowDebugModal(true)}
                     >
-                        {'PII API 요청 파라미터 보기'}
-                    </button>
-                    <button
-                        style={buttonStyle}
-                        type='button'
-                        onClick={() => {
-                            setActiveDebugSection('response');
-                            setShowDebugModal(true);
-                        }}
-                    >
-                        {'PII API 응답 JSON 보기'}
+                        {'PII API 파라미터 보기'}
                     </button>
                 </div>
             )}
@@ -331,7 +305,7 @@ export default function UpstageBotPost(props: Props) {
                     >
                         <div style={modalHeaderStyle}>
                             <div style={{display: 'flex', flexDirection: 'column', gap: '4px'}}>
-                                <strong>{debugModalTitle}</strong>
+                                <strong>{'PII API 파라미터'}</strong>
                                 <span style={statusStyle}>
                                     {`Correlation ID: ${props.post?.props?.upstage_correlation_id || '-'}`}
                                 </span>
@@ -356,36 +330,14 @@ export default function UpstageBotPost(props: Props) {
                                     <pre style={debugPreStyle}>{debugError}</pre>
                                 </section>
                             )}
-                            {hasInputDebug && hasOutputDebug && (
-                                <div style={tabRowStyle}>
-                                    <button
-                                        style={getDebugTabButtonStyle(activeDebugSection === 'request')}
-                                        type='button'
-                                        onClick={() => setActiveDebugSection('request')}
-                                    >
-                                        {'요청'}
-                                    </button>
-                                    <button
-                                        style={getDebugTabButtonStyle(activeDebugSection === 'response')}
-                                        type='button'
-                                        onClick={() => setActiveDebugSection('response')}
-                                    >
-                                        {'응답'}
-                                    </button>
-                                </div>
-                            )}
-                            {activeDebugSection === 'request' && (
-                                <section style={debugPanelStyle}>
-                                    <strong>{'Request Parameters'}</strong>
-                                    <pre style={debugPreStyle}>{renderDebugContent(inputDebug, '요청 payload가 저장되지 않았습니다.')}</pre>
-                                </section>
-                            )}
-                            {activeDebugSection === 'response' && (
-                                <section style={debugPanelStyle}>
-                                    <strong>{'API Response JSON'}</strong>
-                                    <pre style={debugPreStyle}>{renderDebugContent(outputDebug, '응답 payload가 저장되지 않았습니다. 이 post가 새 디버그 저장 방식 이전에 생성되었을 수 있습니다.')}</pre>
-                                </section>
-                            )}
+                            <section style={debugPanelStyle}>
+                                <strong>{'Request Parameters'}</strong>
+                                <pre style={debugPreStyle}>{renderDebugContent(inputDebug, '요청 payload가 저장되지 않았습니다.')}</pre>
+                            </section>
+                            <section style={debugPanelStyle}>
+                                <strong>{'API Response JSON'}</strong>
+                                <pre style={debugPreStyle}>{renderDebugContent(outputDebug, '응답 payload가 저장되지 않았습니다.')}</pre>
+                            </section>
                         </div>
                     </div>
                 </div>
@@ -432,13 +384,3 @@ function renderDebugContent(value: string, emptyMessage: string) {
     return emptyMessage;
 }
 
-function getDebugTabButtonStyle(active: boolean): React.CSSProperties {
-    if (active) {
-        return {
-            ...buttonStyle,
-            background: 'rgba(var(--button-bg-rgb), 0.18)',
-        };
-    }
-
-    return buttonStyle;
-}
